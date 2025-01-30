@@ -77,17 +77,13 @@ class TRAiLLVisualizer:
             # Keep reading until terminate_evt is set
             while not self.terminate_loop_evt.is_set():               
                 line = self.ser.readline().decode('utf-8').strip()
-                if line == '':
-                    # empty line (end of 6 lines)
-                    if buffer:
-                        data = self.parse(buffer)
-                        if data.shape == (6, 6):
-                            self.data_queue.put(data)
-                            self.save(data)
-                        buffer.clear()
-                else:
-                    # within 6 lines
-                    buffer.append(line)
+                buffer.append(line)
+                if len(buffer) == 6:
+                    data = self.parse(buffer)
+                    if data.shape == (6, 6):
+                        self.data_queue.put(data)
+                        self.save(data)
+                    buffer.clear()
         
         except Exception as e:
             print(f'Error in serial process: {e}')
@@ -103,7 +99,7 @@ class TRAiLLVisualizer:
         This is the main process.
         '''
         self.fig, self.ax = plt.subplots()
-        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='gray', vmin=2500, vmax=2600)
+        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=2000, vmax=3000)
         
         ax_button = plt.axes([0.7, 0.01, 0.15, 0.05])
         terminate_button = Button(ax_button, 'Terminate', color='red', hovercolor='lightcoral')
