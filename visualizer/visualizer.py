@@ -1,6 +1,6 @@
 import os
-import sys
 import datetime
+import argparse
 from multiprocessing import Process, Queue, Event
 
 import serial
@@ -10,7 +10,7 @@ from matplotlib.animation import FuncAnimation
 import numpy as np
 
 class TRAiLLVisualizer:
-    def __init__(self, serial_port='COM18', baud_rate=115200, data_folder='data', timeout=0.5):
+    def __init__(self, serial_port='COM18', baud_rate=115200, data_folder=None, timeout=0.5):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
         self.data_folder = data_folder
@@ -21,6 +21,10 @@ class TRAiLLVisualizer:
         self.terminate_loop_evt = Event()
         
         self.filepath = None
+
+        if self.data_folder is None:
+            self.data_folder = 'data'
+        
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
 
@@ -99,7 +103,7 @@ class TRAiLLVisualizer:
         This is the main process.
         '''
         self.fig, self.ax = plt.subplots()
-        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=2000, vmax=3000)
+        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=2550, vmax=2650)
         
         ax_button = plt.axes([0.7, 0.01, 0.15, 0.05])
         terminate_button = Button(ax_button, 'Terminate', color='red', hovercolor='lightcoral')
@@ -107,16 +111,15 @@ class TRAiLLVisualizer:
 
         anim = FuncAnimation(self.fig, self.update, interval=20,
                              cache_frame_data=False, blit=True)
-        print(f'Parent: {self.terminate_loop_evt.is_set()}')
         plt.show()
 
     def terminate(self, event):
-        print('Test terminated by user.')
         self.terminate_loop_evt.set()
         if hasattr(self, 'serial_process') and self.serial_process.is_alive():
             self.serial_process.terminate()
             self.serial_process.join()
         plt.close(self.fig)
+        print('Test terminated by user.')
 
     def run(self):
         self.data_queue = Queue()
@@ -127,6 +130,14 @@ class TRAiLLVisualizer:
         self._visualization_process()
 
 if __name__ == '__main__':
-    visualizer = TRAiLLVisualizer(serial_port='COM18', baud_rate=115200, timeout=None)
+    parser = argparse.ArgumentParser(prog='TRAiLL visualizer')
+    parser.add_argument('--port', type=str, help='Port to connect to TRAiLL.')
+    parser.add_argument('--dir', type=str, default=None, help='Path to save data.')
+    
+    args = parser.parse_args()
+    serial_port = args.port
+    data_dir = args.dir
+    
+    visualizer = TRAiLLVisualizer(serial_port=serial_port, data_folder=data_dir)
     visualizer.run()
-        
+    
