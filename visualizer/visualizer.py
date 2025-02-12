@@ -23,7 +23,7 @@ class TRAiLLVisualizer:
         self.filepath = None
 
         if self.data_folder is None:
-            self.data_folder = 'data'
+            self.data_folder = 'raw_data'
         
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
@@ -103,13 +103,13 @@ class TRAiLLVisualizer:
         This is the main process.
         '''
         self.fig, self.ax = plt.subplots()
-        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=2550, vmax=2650)
+        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=0, vmax=2800)
         
         ax_button = plt.axes([0.7, 0.01, 0.15, 0.05])
         terminate_button = Button(ax_button, 'Terminate', color='red', hovercolor='lightcoral')
         terminate_button.on_clicked(self.terminate)
 
-        anim = FuncAnimation(self.fig, self.update, interval=20,
+        anim = FuncAnimation(self.fig, self.update, interval=5,
                              cache_frame_data=False, blit=True)
         plt.show()
 

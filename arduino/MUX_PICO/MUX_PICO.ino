@@ -1,3 +1,4 @@
+#include <MBED_RPi_Pico_TimerInterrupt.h>
 
 #define NUM_MUX         3   // Number of multiplexers
 #define NUM_CHANNEL     16  // Number of channels in a mux
@@ -6,30 +7,22 @@
 #define LOCAL_ADC_RES   12
 #define MAX_ADC_VALUE   (1 << LOCAL_ADC_RES) - 1  // for 12-bit, 4095
 
-static const uint8_t pin_mapping[3][4] = {
+volatile bool can_print = false;
+
+static const uint8_t pin_mapping[NUM_MUX][4] = {
     {2,  3,  6,  7 },   // Group 0
     {8,  9,  10, 11},   // Group 1
     {12, 13, 14, 15}    // Group 2
 };
 
-void setup()
+void TimerHandler0(uint alarm_num)
 {
-    // put your setup code here, to run once:
-    Serial.begin(115200);
-    while(!Serial);
-    Serial.println("begin");
-
-    analogReadResolution(LOCAL_ADC_RES);
-
-    for (int group = 0; group < NUM_MUX; group++)
-    {
-        for (int index = 0; index < 4; index++)
-            pinMode(pin_mapping[group][index], OUTPUT);
-    }
-
-    pinMode(LED_BUILTIN, OUTPUT);
-
+    TIMER_ISR_START(alarm_num);
+    can_print = true;
+    TIMER_ISR_END(alarm_num);
 }
+
+MBED_RPI_PICO_Timer ITimer0(0);
 
 void setMuxChannel(int group, int channel)
 {
@@ -49,7 +42,6 @@ void setMuxChannel(int group, int channel)
 int getChannelRead(int channel)
 {
     int read_val;
-
     if (channel < 16)
     {
         setMuxChannel(0, channel);
@@ -71,7 +63,7 @@ int getChannelRead(int channel)
     return read_val;
 }
 
-void loop()
+void printData()
 {
     digitalWrite(LED_BUILTIN, HIGH);
 
@@ -85,18 +77,35 @@ void loop()
             Serial.print(val);
             Serial.print('\t');
         }
-
         Serial.println();
     }
-
     Serial.println();
-
     digitalWrite(LED_BUILTIN, LOW);
-    delay(10);
+}
+
+void setup()
+{
+    // put your setup code here, to run once:
+    Serial.begin(115200);
+    while(!Serial);
+    Serial.println("begin");
+
+    analogReadResolution(LOCAL_ADC_RES);
+
+    for (int group = 0; group < NUM_MUX; group++)
+    {
+        for (int index = 0; index < 4; index++)
+            pinMode(pin_mapping[group][index], OUTPUT);
+    }
+    pinMode(LED_BUILTIN, OUTPUT);
+
+    if (!ITimer0.attachInterruptInterval(1000, TimerHandler0))
+        Serial.println("Failed to attach timer interrupt");
 }
 
 
-
-
-
-
+void loop()
+{
+    if (can_print)
+        printData();
+}
