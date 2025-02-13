@@ -1,4 +1,3 @@
-import multiprocessing.synchronize
 import os
 import datetime
 import argparse
