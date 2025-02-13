@@ -1,8 +1,10 @@
+import multiprocessing.synchronize
 import os
 import datetime
 import argparse
 import logging
-from multiprocessing import Process, Queue, Event
+from multiprocessing import Queue, Process, Event
+from multiprocessing.synchronize import Event as SyncEvent
 
 import serial
 import matplotlib.pyplot as plt
@@ -48,8 +50,7 @@ class TRAiLLVisualizer:
             f.write('timestamp,' + ','.join([f"ch{i+1}" for i in range(36)]) + '\n')
         logging.info(f"Data will be saved to {self.filepath}")
     
-    @traill_benchmark
-    def parse(self, lines):
+    def parse(self, lines: list):
         '''
         Parses a set of data lines into a 2D array
         '''
@@ -59,8 +60,7 @@ class TRAiLLVisualizer:
         except ValueError as e:
             logging.error(f'Error parsing data: {e}')
             return np.zeros((6, 6))
-
-    @traill_benchmark
+        
     def update(self, frame):
         # Drain the queue to get the latest data sample
         latest_data = None
@@ -108,30 +108,27 @@ class TRAiLLVisualizer:
                 logging.info('Serial port closed.')
     
     @staticmethod
-    def _saving_process(saving_queue, filepath, terminate_loop_evt):
+    def _saving_process(saving_queue: Queue,
+                        filepath: str,
+                        terminate_loop_evt: SyncEvent):
         '''
         Stand-alone process for saving data to disk.
         Opens the file once and continuously drains the saving queue, writing each
         matrix with a timestamp to disk.
         '''
-        while True:
-            try:
-                with open(filepath, 'a') as f:
-                    while True:
-                        try:
-                            data = saving_queue.get(timeout=0.1)
-                            flattened_data = data.flatten()
-                            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-                            line = f'{timestamp},' + ','.join(map(str, flattened_data)) + '\n'
-                            f.write(line)
-                            f.flush()
-                        except Exception:
-                            if terminate_loop_evt.is_set() and saving_queue.empty():
-                                break
-                            else:
-                                continue
-            except Exception as e:
-                logging.error(f'Error in saving process: {e}')
+        try:
+            with open(filepath, 'a') as f:
+                while not (terminate_loop_evt.is_set() and saving_queue.empty()):
+                    try:
+                        data = saving_queue.get(timeout=0.1)
+                    except Exception:  # Likely queue.Empty; simply continue looping
+                        continue
+                    flattened_data = data.flatten()
+                    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+                    f.write(f'{timestamp},' + ','.join(map(str, flattened_data)) + '\n')
+                    f.flush()
+        except Exception as e:
+            logging.error(f'Error in saving process: {e}')
 
     def _visualization_process(self):
         '''
