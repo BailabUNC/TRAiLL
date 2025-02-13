@@ -10,6 +10,8 @@ from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
 import numpy as np
 
+from benchmark import traill_benchmark
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 class TRAiLLVisualizer:
@@ -19,15 +21,12 @@ class TRAiLLVisualizer:
         self.data_folder = data_folder
         self.timeout = timeout
         
+        self.filepath = None
         self.fig, self.ax = None, None
-
         self.terminate_loop_evt = Event()
         
-        self.filepath = None
-
         if self.data_folder is None:
             self.data_folder = 'raw_data'
-        
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
 
@@ -45,7 +44,8 @@ class TRAiLLVisualizer:
         with open(self.filepath, 'w') as f:
             f.write('timestamp,' + ','.join([f"ch{i+1}" for i in range(36)]) + '\n')
         logging.info(f"Data will be saved to {self.filepath}")
-
+    
+    @traill_benchmark
     def parse(self, lines):
         '''
         Parses a set of data lines into a 2D array
@@ -57,6 +57,7 @@ class TRAiLLVisualizer:
             logging.error(f'Error parsing data: {e}')
             return np.zeros((6, 6))
 
+    @traill_benchmark
     def save(self, data):
         if self.filepath is None:
             raise RuntimeError('File path is not set. Call set_destination() fisrt.')
@@ -65,6 +66,7 @@ class TRAiLLVisualizer:
         with open(self.filepath, 'a') as f:
             f.write(f'{timestamp},' +  ','.join(map(str, flattened_data)) + '\n')
 
+    @traill_benchmark
     def update(self, frame):
         # Drain the queue to get the latest data sample
         latest_data = None
@@ -81,7 +83,6 @@ class TRAiLLVisualizer:
         '''
         try:
             self.connect()
-            self.set_destination()
             line_buffer = []
 
             # Keep reading until terminate_evt is set
@@ -121,8 +122,8 @@ class TRAiLLVisualizer:
         terminate_button = Button(ax_button, 'Terminate', color='red', hovercolor='lightcoral')
         terminate_button.on_clicked(self.terminate)
 
-        anim = FuncAnimation(self.fig, self.update, interval=5,
-                             cache_frame_data=False, blit=True)
+        anim = FuncAnimation(self.fig, self.update, interval=100,
+                             cache_frame_data=False, blit=False)
         plt.show()
 
     def terminate(self, event):
@@ -134,6 +135,8 @@ class TRAiLLVisualizer:
         logging.info('Test terminated by user.')
 
     def run(self):
+        self.set_destination()
+        
         self.data_queue = Queue()
         self.serial_process = Process(target=self._serial_process)
         self.serial_process.start()
@@ -144,12 +147,12 @@ class TRAiLLVisualizer:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='TRAiLL visualizer')
     parser.add_argument('--port', type=str, help='Port to connect to TRAiLL.')
-    parser.add_argument('--dir', type=str, default=None, help='Path to save data.')
+    parser.add_argument('--path', type=str, default=None, help='Path to save data.')
     
     args = parser.parse_args()
     serial_port = args.port
-    data_dir = args.dir
+    path = args.path
     
-    visualizer = TRAiLLVisualizer(serial_port=serial_port, data_folder=data_dir)
+    visualizer = TRAiLLVisualizer(serial_port=serial_port, data_folder=path)
     visualizer.run()
     
