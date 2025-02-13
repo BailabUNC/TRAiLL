@@ -76,18 +76,18 @@ class TRAiLLVisualizer:
         try:
             self.connect()
             self.set_destination()
-            buffer = []
+            line_buffer = []
 
             # Keep reading until terminate_evt is set
             while not self.terminate_loop_evt.is_set():               
                 line = self.ser.readline().decode('utf-8').strip()
-                buffer.append(line)
-                if len(buffer) == 6:
-                    data = self.parse(buffer)
+                line_buffer.append(line)
+                if len(line_buffer) == 6:
+                    data = self.parse(line_buffer)
                     if data.shape == (6, 6):
                         self.data_queue.put(data)
                         self.save(data)
-                    buffer.clear()
+                    line_buffer.clear()
         
         except Exception as e:
             print(f'Error in serial process: {e}')
@@ -115,9 +115,6 @@ class TRAiLLVisualizer:
 
     def terminate(self, event):
         self.terminate_loop_evt.set()
-        if hasattr(self, 'serial_process') and self.serial_process.is_alive():
-            self.serial_process.terminate()
-            self.serial_process.join()
         plt.close(self.fig)
         print('Test terminated by user.')
 
