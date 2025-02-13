@@ -20,6 +20,9 @@ class TRAiLLVisualizer:
         self.baud_rate = baud_rate
         self.data_folder = data_folder
         self.timeout = timeout
+
+        self.vis_queue = Queue()
+        self.saving_queue = Queue()
         
         self.filepath = None
         self.fig, self.ax = None, None
@@ -58,20 +61,11 @@ class TRAiLLVisualizer:
             return np.zeros((6, 6))
 
     @traill_benchmark
-    def save(self, data):
-        if self.filepath is None:
-            raise RuntimeError('File path is not set. Call set_destination() fisrt.')
-        flattened_data = data.flatten()
-        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-        with open(self.filepath, 'a') as f:
-            f.write(f'{timestamp},' +  ','.join(map(str, flattened_data)) + '\n')
-
-    @traill_benchmark
     def update(self, frame):
         # Drain the queue to get the latest data sample
         latest_data = None
-        while not self.data_queue.empty():
-            latest_data = self.data_queue.get()
+        while not self.vis_queue.empty():
+            latest_data = self.vis_queue.get()
         if latest_data is not None:
             self.img.set_data(latest_data)
         return [self.img]
@@ -93,12 +87,15 @@ class TRAiLLVisualizer:
                     logging.error(f'Decoding error: {decode_err}')
                     continue
 
+                if line == "":
+                    continue  # skip empty line
+
                 line_buffer.append(line)
                 if len(line_buffer) == 6:
                     data = self.parse(line_buffer)
                     if data.shape == (6, 6):
-                        self.data_queue.put(data)
-                        self.save(data)
+                        self.vis_queue.put(data)
+                        self.saving_queue.put(data)
                     line_buffer.clear()
         
         except Exception as e:
@@ -110,10 +107,35 @@ class TRAiLLVisualizer:
                 self.ser.close()
                 logging.info('Serial port closed.')
     
+    @staticmethod
+    def _saving_process(saving_queue, filepath, terminate_loop_evt):
+        '''
+        Stand-alone process for saving data to disk.
+        Opens the file once and continuously drains the saving queue, writing each
+        matrix with a timestamp to disk.
+        '''
+        while True:
+            try:
+                with open(filepath, 'a') as f:
+                    while True:
+                        try:
+                            data = saving_queue.get(timeout=0.1)
+                            flattened_data = data.flatten()
+                            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+                            line = f'{timestamp},' + ','.join(map(str, flattened_data)) + '\n'
+                            f.write(line)
+                            f.flush()
+                        except Exception:
+                            if terminate_loop_evt.is_set() and saving_queue.empty():
+                                break
+                            else:
+                                continue
+            except Exception as e:
+                logging.error(f'Error in saving process: {e}')
+
     def _visualization_process(self):
         '''
-        Animation of the NIRS mapping.
-        This is the main process.
+        Handles real-time visualization of the NIRS mapping.
         '''
         self.fig, self.ax = plt.subplots()
         self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=0, vmax=2800)
@@ -122,7 +144,7 @@ class TRAiLLVisualizer:
         terminate_button = Button(ax_button, 'Terminate', color='red', hovercolor='lightcoral')
         terminate_button.on_clicked(self.terminate)
 
-        anim = FuncAnimation(self.fig, self.update, interval=100,
+        anim = FuncAnimation(self.fig, self.update, interval=10,
                              cache_frame_data=False, blit=False)
         plt.show()
 
@@ -131,15 +153,20 @@ class TRAiLLVisualizer:
         self.terminate_loop_evt.set()
         if hasattr(self, 'serial_process') and self.serial_process.is_alive():
             self.serial_process.join()
+        if hasattr(self, 'saving_process') and self.saving_process.is_alive():
+            self.saving_process.terminate()
         plt.close(self.fig)
         logging.info('Test terminated by user.')
 
     def run(self):
         self.set_destination()
         
-        self.data_queue = Queue()
         self.serial_process = Process(target=self._serial_process)
         self.serial_process.start()
+
+        self.saving_process = Process(target=self._saving_process,
+                                      args=(self.saving_queue, self.filepath, self.terminate_loop_evt))
+        self.saving_process.start()
 
         # main process
         self._visualization_process()
