@@ -1,6 +1,7 @@
 import os
 import datetime
 import argparse
+import logging
 from multiprocessing import Process, Queue, Event
 
 import serial
@@ -8,6 +9,8 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
 import numpy as np
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 class TRAiLLVisualizer:
     def __init__(self, serial_port='COM18', baud_rate=115200, data_folder=None, timeout=0.5):
@@ -31,9 +34,9 @@ class TRAiLLVisualizer:
     def connect(self):
         try:
             self.ser = serial.Serial(self.serial_port, self.baud_rate, timeout=self.timeout)
-            print(f'Connected to {self.serial_port} at {self.baud_rate} baud.')
+            logging.info(f'Connected to {self.serial_port} at {self.baud_rate} baud.')
         except serial.SerialException as e:
-            print(f'Error connecting to serial port: {e}')
+            logging.error(f'Error connecting to serial port: {e}')
             raise
 
     def set_destination(self):
@@ -41,7 +44,7 @@ class TRAiLLVisualizer:
         self.filepath = os.path.join(self.data_folder, f'test-data-{timestamp}.csv')
         with open(self.filepath, 'w') as f:
             f.write('timestamp,' + ','.join([f"ch{i+1}" for i in range(36)]) + '\n')
-        print(f"Data will be saved to {self.filepath}")
+        logging.info(f"Data will be saved to {self.filepath}")
 
     def parse(self, lines):
         '''
@@ -51,7 +54,7 @@ class TRAiLLVisualizer:
             data = [list(map(int, line.split())) for line in lines if line.strip()]
             return np.array(data)
         except ValueError as e:
-            print(f'Error parsing data: {e}')
+            logging.error(f'Error parsing data: {e}')
             return np.zeros((6, 6))
 
     def save(self, data):
@@ -63,9 +66,12 @@ class TRAiLLVisualizer:
             f.write(f'{timestamp},' +  ','.join(map(str, flattened_data)) + '\n')
 
     def update(self, frame):
-        if not self.data_queue.empty():
-            data = self.data_queue.get()
-            self.img.set_data(data)
+        # Drain the queue to get the latest data sample
+        latest_data = None
+        while not self.data_queue.empty():
+            latest_data = self.data_queue.get()
+        if latest_data is not None:
+            self.img.set_data(latest_data)
         return [self.img]
     
     def _serial_process(self):
@@ -79,8 +85,13 @@ class TRAiLLVisualizer:
             line_buffer = []
 
             # Keep reading until terminate_evt is set
-            while not self.terminate_loop_evt.is_set():               
-                line = self.ser.readline().decode('utf-8').strip()
+            while not self.terminate_loop_evt.is_set(): 
+                try:
+                    line = self.ser.readline().decode('utf-8', errors='replace').strip()
+                except Exception as decode_err:
+                    logging.error(f'Decoding error: {decode_err}')
+                    continue
+
                 line_buffer.append(line)
                 if len(line_buffer) == 6:
                     data = self.parse(line_buffer)
@@ -90,12 +101,13 @@ class TRAiLLVisualizer:
                     line_buffer.clear()
         
         except Exception as e:
-            print(f'Error in serial process: {e}')
+            logging.error(f'Error in serial process: {e}')
         except KeyboardInterrupt:
             self.terminate_loop_evt.set()
         finally:
             if hasattr(self, 'ser') and self.ser.is_open:
                 self.ser.close()
+                logging.info('Serial port closed.')
     
     def _visualization_process(self):
         '''
@@ -114,9 +126,12 @@ class TRAiLLVisualizer:
         plt.show()
 
     def terminate(self, event):
+        logging.info('Termination request by user.')
         self.terminate_loop_evt.set()
+        if hasattr(self, 'serial_process') and self.serial_process.is_alive():
+            self.serial_process.join()
         plt.close(self.fig)
-        print('Test terminated by user.')
+        logging.info('Test terminated by user.')
 
     def run(self):
         self.data_queue = Queue()
