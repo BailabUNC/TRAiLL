@@ -2,7 +2,8 @@ import os
 import datetime
 import argparse
 import logging
-from multiprocessing import Queue, Process, Event
+from functools import partial
+from multiprocessing import Queue, Process, Event, Manager
 from multiprocessing.synchronize import Event as SyncEvent
 
 import serial
@@ -28,6 +29,7 @@ class TRAiLLVisualizer:
         self.filepath = None
         self.fig, self.ax = None, None
         self.terminate_loop_evt = Event()
+        self.shared_status = None
         
         if self.data_folder is None:
             self.data_folder = 'raw_data'
@@ -45,8 +47,9 @@ class TRAiLLVisualizer:
     def set_destination(self):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.filepath = os.path.join(self.data_folder, f'test-data-{timestamp}.csv')
+        header = 'timestamp,status,' + ','.join([f"ch{i+1}" for i in range(36)]) + '\n'
         with open(self.filepath, 'w') as f:
-            f.write('timestamp,' + ','.join([f"ch{i+1}" for i in range(36)]) + '\n')
+            f.write(header)
         logging.info(f"Data will be saved to {self.filepath}")
     
     def parse(self, lines: list):
@@ -60,7 +63,7 @@ class TRAiLLVisualizer:
             logging.error(f'Error parsing data: {e}')
             return np.zeros((6, 6))
         
-    def update(self, frame):
+    def update_img(self, frame):
         # Drain the queue to get the latest data sample
         latest_data = None
         while not self.vis_queue.empty():
@@ -68,6 +71,10 @@ class TRAiLLVisualizer:
         if latest_data is not None:
             self.img.set_data(latest_data)
         return [self.img]
+    
+    def update_status(self, new_status, event=None):
+        self.shared_status.status = new_status
+        logging.info(f'Status updated to: {new_status}')
     
     def _serial_process(self):
         '''
@@ -109,7 +116,8 @@ class TRAiLLVisualizer:
     @staticmethod
     def _saving_process(saving_queue: Queue,
                         filepath: str,
-                        terminate_loop_evt: SyncEvent):
+                        terminate_loop_evt: SyncEvent,
+                        shared_status):
         '''
         Stand-alone process for saving data to disk.
         Opens the file once and continuously drains the saving queue, writing each
@@ -124,7 +132,8 @@ class TRAiLLVisualizer:
                         continue
                     flattened_data = data.flatten()
                     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-                    f.write(f'{timestamp},' + ','.join(map(str, flattened_data)) + '\n')
+                    status = shared_status.status
+                    f.write(f'{timestamp},{status},' + ','.join(map(str, flattened_data)) + '\n')
                     f.flush()
         except Exception as e:
             logging.error(f'Error in saving process: {e}')
@@ -136,11 +145,26 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots()
         self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=0, vmax=2800)
         
-        ax_button = plt.axes([0.7, 0.01, 0.15, 0.05])
-        terminate_button = Button(ax_button, 'Terminate', color='red', hovercolor='lightcoral')
+        ax_terminate = plt.axes([0.7, 0.01, 0.15, 0.05])
+        terminate_button = Button(ax_terminate, 'Terminate', color='red', hovercolor='lightcoral')
         terminate_button.on_clicked(self.terminate)
 
-        anim = FuncAnimation(self.fig, self.update, interval=10,
+        # Create status buttons for the activities.
+        activities = ["open", "fist", "point", "pinch", "wave", "trigger", "grab", "thumbs-up", "swipe"]
+        button_width = 0.08
+        button_height = 0.06
+        spacing = 0.02
+        start_y = 0.9  # starting y position for the first button
+        x_pos = 0.91   # fixed x position near the right edge
+        for i, activity in enumerate(activities):
+            ax_button = plt.axes([x_pos,
+                                  start_y - i * (button_height + spacing),
+                                  button_width,
+                                  button_height])
+            button = Button(ax_button, activity)
+            button.on_clicked(partial(self.update_status, new_status=activity))
+
+        anim = FuncAnimation(self.fig, self.update_img, interval=10,
                              cache_frame_data=False, blit=False)
         plt.show()
 
@@ -156,12 +180,19 @@ class TRAiLLVisualizer:
 
     def run(self):
         self.set_destination()
+
+        manager = Manager()
+        self.shared_status = manager.Namespace()
+        self.shared_status.status = 'open'
         
         self.serial_process = Process(target=self._serial_process)
         self.serial_process.start()
 
         self.saving_process = Process(target=self._saving_process,
-                                      args=(self.saving_queue, self.filepath, self.terminate_loop_evt))
+                                      args=(self.saving_queue,
+                                            self.filepath,
+                                            self.terminate_loop_evt,
+                                            self.shared_status))
         self.saving_process.start()
 
         # main process
