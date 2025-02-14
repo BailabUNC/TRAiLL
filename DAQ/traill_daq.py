@@ -4,16 +4,20 @@ import argparse
 import logging
 from functools import partial
 from multiprocessing import Queue, Process, Event, Manager
+from multiprocessing.managers import Namespace
 from multiprocessing.synchronize import Event as SyncEvent
 
 import serial
+import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button
+from matplotlib.widgets import Button, RadioButtons
 from matplotlib.animation import FuncAnimation
 import numpy as np
 
 from benchmark import traill_benchmark
 
+mpl.rcParams['font.family'] = 'arial'
+mpl.rcParams['font.size'] = 14
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 class TRAiLLVisualizer:
@@ -72,7 +76,7 @@ class TRAiLLVisualizer:
             self.img.set_data(latest_data)
         return [self.img]
     
-    def update_status(self, new_status, event=None):
+    def update_status(self, new_status):
         self.shared_status.status = new_status
         logging.info(f'Status updated to: {new_status}')
     
@@ -117,7 +121,7 @@ class TRAiLLVisualizer:
     def _saving_process(saving_queue: Queue,
                         filepath: str,
                         terminate_loop_evt: SyncEvent,
-                        shared_status):
+                        shared_status: Namespace):
         '''
         Stand-alone process for saving data to disk.
         Opens the file once and continuously drains the saving queue, writing each
@@ -142,27 +146,37 @@ class TRAiLLVisualizer:
         '''
         Handles real-time visualization of the NIRS mapping.
         '''
-        self.fig, self.ax = plt.subplots()
-        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=0, vmax=2800)
+        self.fig, self.ax = plt.subplots(figsize=(6, 6))
+        plt.subplots_adjust(left=-0.12, bottom=0.2)
+        plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
+        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='YlOrRd', vmin=0, vmax=1500)
         
-        ax_terminate = plt.axes([0.7, 0.01, 0.15, 0.05])
+        ax_pos = self.ax.get_position()   # [x0, y0, width, height]
+        button_height = 0.075
+        ax_terminate = plt.axes([ax_pos.x0,
+                                 ax_pos.y0 - button_height - 0.01,
+                                 ax_pos.width,
+                                 button_height])
         terminate_button = Button(ax_terminate, 'Terminate', color='red', hovercolor='lightcoral')
         terminate_button.on_clicked(self.terminate)
 
         # Create status buttons for the activities.
-        activities = ["open", "fist", "point", "pinch", "wave", "trigger", "grab", "thumbs-up", "swipe"]
-        button_width = 0.08
-        button_height = 0.06
-        spacing = 0.02
-        start_y = 0.9  # starting y position for the first button
-        x_pos = 0.91   # fixed x position near the right edge
-        for i, activity in enumerate(activities):
-            ax_button = plt.axes([x_pos,
-                                  start_y - i * (button_height + spacing),
-                                  button_width,
-                                  button_height])
-            button = Button(ax_button, activity)
-            button.on_clicked(partial(self.update_status, new_status=activity))
+        activities = ['open',
+                      'fist',
+                      'point',
+                      'pinch',
+                      'wave',
+                      'trigger',
+                      'grab',
+                      'thumbs-up',
+                      'swipe']
+        panel_width = 0.25
+        ax_radio = plt.axes([ax_pos.x0 + ax_pos.width + 0.01,
+                             ax_pos.y0,
+                             panel_width,
+                             ax_pos.height])
+        radio = RadioButtons(ax_radio, activities, active=0)
+        radio.on_clicked(self.update_status)
 
         anim = FuncAnimation(self.fig, self.update_img, interval=10,
                              cache_frame_data=False, blit=False)
