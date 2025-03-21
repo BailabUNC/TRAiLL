@@ -51,7 +51,7 @@ class TRAiLLVisualizer:
     def set_destination(self):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.filepath = os.path.join(self.data_folder, f'test-data-{timestamp}.csv')
-        header = 'timestamp,status,' + ','.join([f"ch{i+1}" for i in range(36)]) + '\n'
+        header = 'timestamp,status,' + ','.join([f"ch{i+1}" for i in range(48)]) + '\n'
         with open(self.filepath, 'w') as f:
             f.write(header)
         logging.info(f"Data will be saved to {self.filepath}")
@@ -65,7 +65,7 @@ class TRAiLLVisualizer:
             return np.array(data)
         except ValueError as e:
             logging.error(f'Error parsing data: {e}')
-            return np.zeros((6, 6))
+            return np.zeros((6, 8))
         
     def update_img(self, frame):
         # Drain the queue to get the latest data sample
@@ -101,9 +101,11 @@ class TRAiLLVisualizer:
                     continue  # skip empty line
 
                 line_buffer.append(line)
+                # logging.info(line)
                 if len(line_buffer) == 6:
                     data = self.parse(line_buffer)
-                    if data.shape == (6, 6):
+                    if data.shape == (6, 8):
+                        data = np.roll(data, -1)  # fix the data order problem
                         self.vis_queue.put(data)
                         self.saving_queue.put(data)
                     line_buffer.clear()
@@ -132,7 +134,8 @@ class TRAiLLVisualizer:
                 while not (terminate_loop_evt.is_set() and saving_queue.empty()):
                     try:
                         data = saving_queue.get(timeout=0.1)
-                    except Exception:  # Likely queue.Empty; simply continue looping
+                    except Exception as e:  # Likely queue.Empty; simply continue looping
+                        logging.error(f'Cannot acquire data: {e}')
                         continue
                     flattened_data = data.flatten()
                     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -146,10 +149,10 @@ class TRAiLLVisualizer:
         '''
         Handles real-time visualization of the NIRS mapping.
         '''
-        self.fig, self.ax = plt.subplots(figsize=(6, 6))
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='YlOrRd', vmin=0, vmax=1500)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap='YlOrRd', vmin=0, vmax=300)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
