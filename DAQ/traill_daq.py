@@ -2,17 +2,22 @@ import os
 import datetime
 import argparse
 import logging
-from multiprocessing import Queue, Process, Event
+from functools import partial
+from multiprocessing import Queue, Process, Event, Manager
+from multiprocessing.managers import Namespace
 from multiprocessing.synchronize import Event as SyncEvent
 
 import serial
+import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button
+from matplotlib.widgets import Button, RadioButtons
 from matplotlib.animation import FuncAnimation
 import numpy as np
 
 from benchmark import traill_benchmark
 
+mpl.rcParams['font.family'] = 'arial'
+mpl.rcParams['font.size'] = 14
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 class TRAiLLVisualizer:
@@ -28,6 +33,7 @@ class TRAiLLVisualizer:
         self.filepath = None
         self.fig, self.ax = None, None
         self.terminate_loop_evt = Event()
+        self.shared_status = None
         
         if self.data_folder is None:
             self.data_folder = 'raw_data'
@@ -45,8 +51,9 @@ class TRAiLLVisualizer:
     def set_destination(self):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.filepath = os.path.join(self.data_folder, f'test-data-{timestamp}.csv')
+        header = 'timestamp,status,' + ','.join([f"ch{i+1}" for i in range(48)]) + '\n'
         with open(self.filepath, 'w') as f:
-            f.write('timestamp,' + ','.join([f"ch{i+1}" for i in range(36)]) + '\n')
+            f.write(header)
         logging.info(f"Data will be saved to {self.filepath}")
     
     def parse(self, lines: list):
@@ -58,16 +65,30 @@ class TRAiLLVisualizer:
             return np.array(data)
         except ValueError as e:
             logging.error(f'Error parsing data: {e}')
-            return np.zeros((6, 6))
+            return np.zeros((6, 8))
         
-    def update(self, frame):
+    def update_img(self, frame):
         # Drain the queue to get the latest data sample
         latest_data = None
         while not self.vis_queue.empty():
             latest_data = self.vis_queue.get()
         if latest_data is not None:
             self.img.set_data(latest_data)
+
+        current_status = self.shared_status.status
+        if self.radio is not None:
+            # radio.value_selected returns the currently selected option
+            if self.radio.value_selected != current_status:
+                try:
+                    new_index = self.activities.index(current_status)
+                except ValueError:
+                    new_index = 0
+                self.radio.set_active(new_index)
         return [self.img]
+    
+    def update_status(self, new_status):
+        self.shared_status.status = new_status
+        logging.info(f'Status updated to: {new_status}')
     
     def _serial_process(self):
         '''
@@ -90,9 +111,11 @@ class TRAiLLVisualizer:
                     continue  # skip empty line
 
                 line_buffer.append(line)
+                # logging.info(line)
                 if len(line_buffer) == 6:
                     data = self.parse(line_buffer)
-                    if data.shape == (6, 6):
+                    if data.shape == (6, 8):
+                        data = np.roll(data, -1)  # fix the data order problem
                         self.vis_queue.put(data)
                         self.saving_queue.put(data)
                     line_buffer.clear()
@@ -109,22 +132,58 @@ class TRAiLLVisualizer:
     @staticmethod
     def _saving_process(saving_queue: Queue,
                         filepath: str,
-                        terminate_loop_evt: SyncEvent):
-        '''
+                        terminate_loop_evt: SyncEvent,
+                        shared_status: Namespace):
+        """
         Stand-alone process for saving data to disk.
         Opens the file once and continuously drains the saving queue, writing each
-        matrix with a timestamp to disk.
-        '''
+        matrix with a timestamp and current status. When a non-"open" action is active,
+        after a pre-defined number of data points (i.e. matrices) have been saved, the status
+        is automatically reset to "open."
+        """
+        action_durations = {
+            'fist': 50,
+            'point': 60,
+            'pinch': 40,
+            'wave': 70,
+            'trigger': 50,
+            'grab': 60,
+            'thumbs-up': 40,
+            'swipe': 50
+        }
+        current_action = 'open'
+        points_count = 0
         try:
             with open(filepath, 'a') as f:
                 while not (terminate_loop_evt.is_set() and saving_queue.empty()):
                     try:
                         data = saving_queue.get(timeout=0.1)
-                    except Exception:  # Likely queue.Empty; simply continue looping
+                    except Exception as e:  # Likely queue.Empty; simply continue looping
+                        logging.error(f'Cannot acquire data: {e}')
                         continue
+
+                    # Update counter only when a non-'open' action is active
+                    if shared_status.status != 'open':
+                        # If the action remains the same, increment; otherwise, reset counter
+                        if shared_status.status == current_action:
+                            points_count += 1
+                        else:
+                            current_action = shared_status.status
+                            points_count = 1
+                    else:
+                        current_action = 'open'
+                        points_count = 0
+
+                    # If the current action has reached its pre-defined duration, reset to 'open'
+                    if current_action != 'open' and points_count >= action_durations.get(current_action, 0):
+                        shared_status.status = 'open'
+                        current_action= 'open'
+                        points_count = 0
+
                     flattened_data = data.flatten()
                     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-                    f.write(f'{timestamp},' + ','.join(map(str, flattened_data)) + '\n')
+                    status = shared_status.status
+                    f.write(f'{timestamp},{status},' + ','.join(map(str, flattened_data)) + '\n')
                     f.flush()
         except Exception as e:
             logging.error(f'Error in saving process: {e}')
@@ -133,14 +192,39 @@ class TRAiLLVisualizer:
         '''
         Handles real-time visualization of the NIRS mapping.
         '''
-        self.fig, self.ax = plt.subplots()
-        self.img = self.ax.imshow(np.zeros((6, 6)), cmap='hot', vmin=0, vmax=2800)
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
+        plt.subplots_adjust(left=-0.12, bottom=0.2)
+        plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap='YlOrRd', vmin=0, vmax=500)
         
-        ax_button = plt.axes([0.7, 0.01, 0.15, 0.05])
-        terminate_button = Button(ax_button, 'Terminate', color='red', hovercolor='lightcoral')
+        ax_pos = self.ax.get_position()   # [x0, y0, width, height]
+        button_height = 0.075
+        ax_terminate = plt.axes([ax_pos.x0,
+                                 ax_pos.y0 - button_height - 0.01,
+                                 ax_pos.width,
+                                 button_height])
+        terminate_button = Button(ax_terminate, 'Terminate', color='red', hovercolor='lightcoral')
         terminate_button.on_clicked(self.terminate)
 
-        anim = FuncAnimation(self.fig, self.update, interval=10,
+        # Create status buttons for the activities.
+        self.activities = ['open',
+                           'fist',
+                           'point',
+                           'pinch',
+                           'wave',
+                           'trigger',
+                           'grab',
+                           'thumbs-up',
+                           'swipe']
+        panel_width = 0.25
+        ax_radio = plt.axes([ax_pos.x0 + ax_pos.width + 0.01,
+                             ax_pos.y0,
+                             panel_width,
+                             ax_pos.height])
+        self.radio = RadioButtons(ax_radio, self.activities, active=0)
+        self.radio.on_clicked(self.update_status)
+
+        anim = FuncAnimation(self.fig, self.update_img, interval=10,
                              cache_frame_data=False, blit=False)
         plt.show()
 
@@ -156,12 +240,19 @@ class TRAiLLVisualizer:
 
     def run(self):
         self.set_destination()
+
+        manager = Manager()
+        self.shared_status = manager.Namespace()
+        self.shared_status.status = 'open'
         
         self.serial_process = Process(target=self._serial_process)
         self.serial_process.start()
 
         self.saving_process = Process(target=self._saving_process,
-                                      args=(self.saving_queue, self.filepath, self.terminate_loop_evt))
+                                      args=(self.saving_queue,
+                                            self.filepath,
+                                            self.terminate_loop_evt,
+                                            self.shared_status))
         self.saving_process.start()
 
         # main process
