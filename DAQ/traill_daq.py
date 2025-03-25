@@ -74,6 +74,16 @@ class TRAiLLVisualizer:
             latest_data = self.vis_queue.get()
         if latest_data is not None:
             self.img.set_data(latest_data)
+
+        current_status = self.shared_status.status
+        if self.radio is not None:
+            # radio.value_selected returns the currently selected option
+            if self.radio.value_selected != current_status:
+                try:
+                    new_index = self.activities.index(current_status)
+                except ValueError:
+                    new_index = 0
+                self.radio.set_active(new_index)
         return [self.img]
     
     def update_status(self, new_status):
@@ -124,11 +134,25 @@ class TRAiLLVisualizer:
                         filepath: str,
                         terminate_loop_evt: SyncEvent,
                         shared_status: Namespace):
-        '''
+        """
         Stand-alone process for saving data to disk.
         Opens the file once and continuously drains the saving queue, writing each
-        matrix with a timestamp to disk.
-        '''
+        matrix with a timestamp and current status. When a non-"open" action is active,
+        after a pre-defined number of data points (i.e. matrices) have been saved, the status
+        is automatically reset to "open."
+        """
+        action_durations = {
+            'fist': 50,
+            'point': 60,
+            'pinch': 40,
+            'wave': 70,
+            'trigger': 50,
+            'grab': 60,
+            'thumbs-up': 40,
+            'swipe': 50
+        }
+        current_action = 'open'
+        points_count = 0
         try:
             with open(filepath, 'a') as f:
                 while not (terminate_loop_evt.is_set() and saving_queue.empty()):
@@ -137,6 +161,25 @@ class TRAiLLVisualizer:
                     except Exception as e:  # Likely queue.Empty; simply continue looping
                         logging.error(f'Cannot acquire data: {e}')
                         continue
+
+                    # Update counter only when a non-'open' action is active
+                    if shared_status.status != 'open':
+                        # If the action remains the same, increment; otherwise, reset counter
+                        if shared_status.status == current_action:
+                            points_count += 1
+                        else:
+                            current_action = shared_status.status
+                            points_count = 1
+                    else:
+                        current_action = 'open'
+                        points_count = 0
+
+                    # If the current action has reached its pre-defined duration, reset to 'open'
+                    if current_action != 'open' and points_count >= action_durations.get(current_action, 0):
+                        shared_status.status = 'open'
+                        current_action= 'open'
+                        points_count = 0
+
                     flattened_data = data.flatten()
                     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                     status = shared_status.status
@@ -152,7 +195,7 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 8)), cmap='YlOrRd', vmin=0, vmax=300)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap='YlOrRd', vmin=0, vmax=500)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
@@ -164,22 +207,22 @@ class TRAiLLVisualizer:
         terminate_button.on_clicked(self.terminate)
 
         # Create status buttons for the activities.
-        activities = ['open',
-                      'fist',
-                      'point',
-                      'pinch',
-                      'wave',
-                      'trigger',
-                      'grab',
-                      'thumbs-up',
-                      'swipe']
+        self.activities = ['open',
+                           'fist',
+                           'point',
+                           'pinch',
+                           'wave',
+                           'trigger',
+                           'grab',
+                           'thumbs-up',
+                           'swipe']
         panel_width = 0.25
         ax_radio = plt.axes([ax_pos.x0 + ax_pos.width + 0.01,
                              ax_pos.y0,
                              panel_width,
                              ax_pos.height])
-        radio = RadioButtons(ax_radio, activities, active=0)
-        radio.on_clicked(self.update_status)
+        self.radio = RadioButtons(ax_radio, self.activities, active=0)
+        self.radio.on_clicked(self.update_status)
 
         anim = FuncAnimation(self.fig, self.update_img, interval=10,
                              cache_frame_data=False, blit=False)
