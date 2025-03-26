@@ -3,4 +3,4 @@
 result/
 */__pycache__
 
-*.csv
+raw_data/*.csv
