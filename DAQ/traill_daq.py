@@ -1,4 +1,5 @@
 import os
+import time
 import datetime
 import argparse
 import logging
@@ -141,6 +142,8 @@ class TRAiLLVisualizer:
         after a pre-defined number of data points (i.e. matrices) have been saved, the status
         is automatically reset to "open."
         """
+        last_ts = 0.0  # last saved timestamp in seconds
+
         action_durations = {
             'fist': 50,
             'point': 60,
@@ -180,8 +183,17 @@ class TRAiLLVisualizer:
                         current_action= 'open'
                         points_count = 0
 
+                    # Generate the current timestamp using the serial port reported time
+                    now_ts = round(datetime.datetime.now().timestamp(), 2)
+                    if now_ts <= last_ts:
+                        now_ts = last_ts + 0.01
+                    last_ts = now_ts
+                    ts_dt = datetime.datetime.fromtimestamp(now_ts)
+                    # Format the timestamp with exactly 2 digits after the decimal point.
+                    # The %f format gives microseconds; we trim the last 4 digits.
+                    timestamp = ts_dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
+
                     flattened_data = data.flatten()
-                    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                     status = shared_status.status
                     f.write(f'{timestamp},{status},' + ','.join(map(str, flattened_data)) + '\n')
                     f.flush()
