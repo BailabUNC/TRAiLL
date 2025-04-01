@@ -22,11 +22,17 @@ mpl.rcParams['font.size'] = 14
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 class TRAiLLVisualizer:
-    def __init__(self, serial_port='COM18', baud_rate=115200, data_folder=None, timeout=0.5):
+    def __init__(self,
+                 serial_port,
+                 baud_rate=115200,
+                 data_folder=None,
+                 timeout=0.5,
+                 action_duration=50):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
         self.data_folder = data_folder
         self.timeout = timeout
+        self.action_duration = action_duration
 
         self.vis_queue = Queue()
         self.saving_queue = Queue()
@@ -134,7 +140,8 @@ class TRAiLLVisualizer:
     def _saving_process(saving_queue: Queue,
                         filepath: str,
                         terminate_loop_evt: SyncEvent,
-                        shared_status: Namespace):
+                        shared_status: Namespace,
+                        action_duration: int):
         """
         Stand-alone process for saving data to disk.
         Opens the file once and continuously drains the saving queue, writing each
@@ -144,16 +151,6 @@ class TRAiLLVisualizer:
         """
         last_ts = 0.0  # last saved timestamp in seconds
 
-        action_durations = {
-            'fist': 50,
-            'point': 60,
-            'pinch': 40,
-            'wave': 70,
-            'trigger': 50,
-            'grab': 60,
-            'thumbs-up': 40,
-            'swipe': 50
-        }
         current_action = 'open'
         points_count = 0
         try:
@@ -178,7 +175,7 @@ class TRAiLLVisualizer:
                         points_count = 0
 
                     # If the current action has reached its pre-defined duration, reset to 'open'
-                    if current_action != 'open' and points_count >= action_durations.get(current_action, 0):
+                    if current_action != 'open' and points_count >= action_duration:
                         shared_status.status = 'open'
                         current_action= 'open'
                         points_count = 0
@@ -207,7 +204,7 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 8)), cmap='YlOrRd', vmin=0, vmax=500)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap='YlOrRd', vmin=0, vmax=400)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
@@ -264,7 +261,8 @@ class TRAiLLVisualizer:
                                       args=(self.saving_queue,
                                             self.filepath,
                                             self.terminate_loop_evt,
-                                            self.shared_status))
+                                            self.shared_status,
+                                            self.action_duration))
         self.saving_process.start()
 
         # main process
