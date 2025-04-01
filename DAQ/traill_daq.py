@@ -272,7 +272,7 @@ class TRAiLLVisualizer:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='TRAiLL visualizer')
-    parser.add_argument('--port', type=str, help='Port to connect to TRAiLL.')
+    parser.add_argument('--port', type=str, default='COM31', help='Port to connect to TRAiLL.')
     parser.add_argument('--path', type=str, default=None, help='Path to save data.')
     
     args = parser.parse_args()
