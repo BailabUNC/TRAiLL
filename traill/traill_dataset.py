@@ -11,12 +11,12 @@ from torch.utils.data import Dataset
 class TRAiLLDataset(Dataset):
     def __init__(self,
                  csv_path,
-                 target_length=64,
+                 target_length=128,
                  onset_threshold_factor=0.5,
                  min_instance_length=5,
-                 pre_trigger_points=3,
+                 pre_trigger_points=15,
                  filter_order=2,
-                 filter_cutoff=[0.2, 10],
+                 filter_cutoff=10,
                  fs=100,
                  transform=None):
         """
@@ -60,28 +60,44 @@ class TRAiLLDataset(Dataset):
         # Load the csv files
         df = pd.read_csv(self.csv_path)
         df.sort_values(by='timestamp', inplace=True)
-        groups = df.groupby(df['status'].ne(df['status'].shift()).cumsum())
 
+        sensor_columns = df.columns[2:]
+        raw_sensor_data = df[sensor_columns].values.astype(np.float32)
+        filtered_sensor_data = self._apply_butterworth(raw_sensor_data)
+        df[sensor_columns] = filtered_sensor_data
+
+        groups = list(df.groupby(df['status'].ne(df['status'].shift()).cumsum()))
         instances = []
-        for _, group in groups:
+
+        for idx, (group_id, group) in enumerate(groups):
             label = group['status'].iloc[0]
             if label == 'open' or len(group) < self.min_instance_length:
                 continue
             sensor_data = group.iloc[:, 2:].values.astype(np.float32)
-            sensor_data = self._apply_butterworth(sensor_data)
-            sensor_data = self._align_onset(sensor_data)
+
+            # Check if there is a preceding group that is 'open'
+            preceding_data = None
+            if idx > 0:
+                prev_label = groups[idx - 1][1]['status'].iloc[0]
+                if prev_label == 'open':
+                    preceding_data = groups[idx - 1][1].iloc[:, 2:].values.astype(np.float32)
+
+            trimmed_data, trigger_offset = self._align_onset(sensor_data, preceding_data)
 
             # Resample the sensor data to a fixed length on time axis
-            sensor_data = resample(sensor_data, self.target_length, axis=0)
+            original_length = trimmed_data.shape[0]
+            resampled_data = resample(trimmed_data, self.target_length, axis=0)
+            scaled_trigger = int(trigger_offset / original_length * self.target_length)
 
             # Normalize: per-channel z-score normalization
-            mean = sensor_data.mean(axis=0)
-            std = sensor_data.std(axis=0) + 1e-6  # avoid divided by zero
-            sensor_data = (sensor_data - mean) / std
+            mean = resampled_data.mean(axis=0)
+            std = resampled_data.std(axis=0) + 1e-6  # avoid divided by zero
+            resampled_data = (resampled_data - mean) / std
 
             instances.append({
-                'features': sensor_data,
-                'label': label
+                'features': resampled_data,
+                'label': label,
+                'trigger_index': scaled_trigger
             })
         
         return instances
@@ -89,31 +105,50 @@ class TRAiLLDataset(Dataset):
     def _apply_butterworth(self, sensor_data):
         """
         Apply a butterworth filter to the sensor data.
-        Filtering is performed on each channel independently using zero-phase filtering.
         """
         sos = butter(self.filter_order, self.filter_cutoff,
-                     btype='bandpass', fs=self.fs, output='sos', analog=False)
-        filtered_data = sosfiltfilt(sos, sensor_data, axis=0)
+                     btype='low', fs=self.fs, output='sos', analog=False)
+        filtered_data = sosfiltfilt(sos, sensor_data, axis=0, padlen=self.target_length // 2)
         return filtered_data
 
-    def _align_onset(self, sensor_data):
+    def _align_onset(self, active_data, preceding_data):
         """
-        A simple onset detection by computing the norm of the difference between consecutive samples.
-        The first index where the derivative exceeds a fraction (onset_threshold_factor) of the maximum 
-        derivative norm is chosen as the onset.
+        Detect the gesture onset using only the active_data.
+        Then, if preceding_data is provided and the active onset occurs within 
+        pre_trigger_points, prepend just enough rows from preceding_data so that
+        the effective segment includes the desired pre-trigger window.
+        
+        Returns:
+            concatenated_data: Active data with the necessary pre-trigger rows (if any).
+            trigger_offset: The index in the concatenated data corresponding to the onset.
         """
-        # Compute the Euclidean norm of the first difference (derivative) at each time step
-        diff_norm = np.linalg.norm(np.diff(sensor_data, axis=0), axis=0)
+        # Compute onset index in active_data.
+        diff_norm = np.linalg.norm(np.diff(active_data, axis=0), axis=1)
         threshold = self.onset_threshold_factor * np.max(diff_norm)
-
-        # Find the first index where the difference exceeds the threshold
         onset_indices = np.where(diff_norm > threshold)[0]
         if onset_indices.size > 0:
-            onset_index = onset_indices[0]
-            # Trace back a few points, ensuring we do not go below index 0.
-            onset_index = max(0, onset_index - self.pre_trigger_points)
-            sensor_data = sensor_data[onset_index:]
-        return sensor_data
+            onset_index_active = onset_indices[0]
+        else:
+            onset_index_active = 0
+        
+        if preceding_data is not None:
+            # Determine how many pre-trigger points we need from the active group.
+            extra_needed = self.pre_trigger_points - onset_index_active
+            if extra_needed > 0:
+                # Use as many rows as available from preceding_data (up to extra_needed)
+                num_rows_preceding = preceding_data.shape[0]
+                rows_to_prepend = preceding_data[max(0, num_rows_preceding - extra_needed):]
+            else:
+                rows_to_prepend = np.empty((0, active_data.shape[1]))
+            concatenated_data = np.concatenate((rows_to_prepend, active_data), axis=0)
+            trigger_offset = rows_to_prepend.shape[0] + onset_index_active
+            return concatenated_data, trigger_offset
+        else:
+            # Without preceding data, simply trace back within active_data.
+            effective_start = max(0, onset_index_active - self.pre_trigger_points)
+            trigger_offset = onset_index_active - effective_start
+            trimmed_data = active_data[effective_start:]
+            return trimmed_data, trigger_offset
     
     def __len__(self):
         return len(self.instances)
@@ -147,6 +182,7 @@ if __name__ == '__main__':
     features_list = []
     for features, _ in dataset:
         features_list.append(features.numpy())
+    trigger_indices = [inst['trigger_index'] for inst in dataset.instances]
     all_features = np.stack(features_list, axis=0)  # shape: (n_instances, target_length, num_channels)
     num_instances, target_length, num_channels = all_features.shape
 
@@ -157,10 +193,14 @@ if __name__ == '__main__':
         for i in range(num_instances):
             ax.plot(all_features[i, :, channel], c='lightgray', alpha=0.2)
         
+            trig_idx = trigger_indices[i]
+            y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
+            ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
+
         avg_curve = np.mean(all_features[:, :, channel], axis=0)
         ax.plot(avg_curve, c='red', linewidth=2)
         
-        ax.set_xlim([0, 63])
+        ax.set_xlim([0, dataset.target_length - 1])
         ax.set_ylim([-3, 3])
         ax.set_xticks([])
         ax.set_yticks([])
