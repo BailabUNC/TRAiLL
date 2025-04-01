@@ -15,8 +15,8 @@ class TRAiLLDataset(Dataset):
                  onset_threshold_factor=0.5,
                  min_instance_length=5,
                  pre_trigger_points=15,
-                 filter_order=2,
-                 filter_cutoff=10,
+                 filter_order=3,
+                 filter_cutoff=7,
                  fs=100,
                  transform=None):
         """
@@ -84,18 +84,12 @@ class TRAiLLDataset(Dataset):
 
             trimmed_data, trigger_offset = self._align_onset(sensor_data, preceding_data)
 
-            # Resample the sensor data to a fixed length on time axis
-            original_length = trimmed_data.shape[0]
-            resampled_data = resample(trimmed_data, self.target_length, axis=0)
-            scaled_trigger = int(trigger_offset / original_length * self.target_length)
-
-            # Normalize: per-channel z-score normalization
-            mean = resampled_data.mean(axis=0)
-            std = resampled_data.std(axis=0) + 1e-6  # avoid divided by zero
-            resampled_data = (resampled_data - mean) / std
+            # Resample and normalize the trimmed data.
+            sensor_data_resampled, scaled_trigger = self._resample_signal(trimmed_data, trigger_offset)
+            sensor_data_normalized = self._normalize_signal(sensor_data_resampled)
 
             instances.append({
-                'features': resampled_data,
+                'features': sensor_data_normalized,
                 'label': label,
                 'trigger_index': scaled_trigger
             })
@@ -149,6 +143,25 @@ class TRAiLLDataset(Dataset):
             trigger_offset = onset_index_active - effective_start
             trimmed_data = active_data[effective_start:]
             return trimmed_data, trigger_offset
+
+    def _resample_signal(self, signal, trigger_offset):
+        """
+        Resample the signal to target_length and scale the trigger offset accordingly.
+        Returns the resampled signal and the scaled trigger offset.
+        """
+        original_length = signal.shape[0]
+        resampled_signal = resample(signal, self.target_length, axis=0)
+        scaled_trigger = int(trigger_offset / original_length * self.target_length)
+        return resampled_signal, scaled_trigger
+    
+    def _normalize_signal(self, signal):
+        """
+        Normalize the signal per channel using z-score normalization.
+        """
+        mean = signal.mean(axis=0)
+        std = signal.std(axis=0) + 1e-6  # avoid division by zero
+        normalized_signal = (signal - mean) / std
+        return normalized_signal
     
     def __len__(self):
         return len(self.instances)
@@ -179,11 +192,13 @@ if __name__ == '__main__':
 
     dataset = TRAiLLDataset(path)
 
+    print(f'Visualizing {len(dataset)} instances...')
+
     features_list = []
     for features, _ in dataset:
         features_list.append(features.numpy())
     trigger_indices = [inst['trigger_index'] for inst in dataset.instances]
-    all_features = np.stack(features_list, axis=0)  # shape: (n_instances, target_length, num_channels)
+    all_features = np.stack(features_list, axis=0)  # shape: (num_instances, target_length, num_channels)
     num_instances, target_length, num_channels = all_features.shape
 
     import matplotlib.pyplot as plt
