@@ -2,13 +2,14 @@
 
 import os
 import argparse
+
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, sosfiltfilt, resample
 import torch
 from torch.utils.data import Dataset
 
-class TRAiLLDataset(Dataset):
+class TRAiLLActionDataset(Dataset):
     def __init__(self,
                  csv_path,
                  target_length=128,
@@ -190,7 +191,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     path = os.path.join('data', args.person, args.test_name + '.csv')
 
-    dataset = TRAiLLDataset(path)
+    dataset = TRAiLLActionDataset(path)
 
     print(f'Visualizing {len(dataset)} instances...')
 
