@@ -27,7 +27,8 @@ class TRAiLLVisualizer:
                  baud_rate=115200,
                  data_folder=None,
                  timeout=0.5,
-                 action_duration=50):
+                 action_duration=50,
+                 disable_csv=False):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
         self.data_folder = data_folder
@@ -36,6 +37,8 @@ class TRAiLLVisualizer:
 
         self.vis_queue = Queue()
         self.saving_queue = Queue()
+
+        self.disable_csv = disable_csv
         
         self.filepath = None
         self.fig, self.ax = None, None
@@ -56,12 +59,15 @@ class TRAiLLVisualizer:
             raise
 
     def set_destination(self):
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        if self.disable_csv:
+            logging.info('Saving is disabled, no csv will be created.')
+            return
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
         self.filepath = os.path.join(self.data_folder, f'test-data-{timestamp}.csv')
         header = 'timestamp,status,' + ','.join([f"ch{i+1}" for i in range(48)]) + '\n'
         with open(self.filepath, 'w') as f:
             f.write(header)
-        logging.info(f"Data will be saved to {self.filepath}")
+        logging.info(f'Data will be saved to {self.filepath}')
     
     def parse(self, lines: list):
         '''
@@ -124,7 +130,8 @@ class TRAiLLVisualizer:
                     if data.shape == (6, 8):
                         data = np.roll(data, -1)  # fix the data order problem
                         self.vis_queue.put(data)
-                        self.saving_queue.put(data)
+                        if not self.disable_csv:
+                            self.saving_queue.put(data)
                     line_buffer.clear()
         
         except Exception as e:
@@ -257,13 +264,18 @@ class TRAiLLVisualizer:
         self.serial_process = Process(target=self._serial_process)
         self.serial_process.start()
 
-        self.saving_process = Process(target=self._saving_process,
-                                      args=(self.saving_queue,
-                                            self.filepath,
-                                            self.terminate_loop_evt,
-                                            self.shared_status,
-                                            self.action_duration))
-        self.saving_process.start()
+        if not self.disable_csv:
+            self.saving_process = Process(
+                target=self._saving_process,
+                args=(
+                    self.saving_queue,
+                    self.filepath,
+                    self.terminate_loop_evt,
+                    self.shared_status,
+                    self.action_duration
+                    )
+                )
+            self.saving_process.start()
 
         # main process
         self._visualization_process()
@@ -272,11 +284,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='TRAiLL visualizer')
     parser.add_argument('--port', type=str, default='COM31', help='Port to connect to TRAiLL.')
     parser.add_argument('--path', type=str, default=None, help='Path to save data.')
+    parser.add_argument('--disable-csv', action='store_true', help='Disable csv file saving.')
     
     args = parser.parse_args()
     serial_port = args.port
     path = args.path
+    disable_csv = args.disable_csv
     
-    visualizer = TRAiLLVisualizer(serial_port=serial_port, data_folder=path)
+    visualizer = TRAiLLVisualizer(serial_port=serial_port, data_folder=path, disable_csv=disable_csv)
     visualizer.run()
     
