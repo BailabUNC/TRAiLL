@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, RadioButtons
 from matplotlib.animation import FuncAnimation
 import numpy as np
+from scipy.ndimage import zoom
+from cmap import Colormap
 
 from benchmark import traill_benchmark
 
@@ -27,7 +29,7 @@ class TRAiLLVisualizer:
                  baud_rate=115200,
                  data_folder=None,
                  timeout=0.5,
-                 action_duration=50,
+                 action_duration=100,
                  disable_csv=False):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
@@ -86,7 +88,8 @@ class TRAiLLVisualizer:
         while not self.vis_queue.empty():
             latest_data = self.vis_queue.get()
         if latest_data is not None:
-            self.img.set_data(latest_data)
+            display_data = zoom(latest_data, (10, 10), order=1)
+            self.img.set_data(display_data)
 
         current_status = self.shared_status.status
         if self.radio is not None:
@@ -108,6 +111,7 @@ class TRAiLLVisualizer:
         Reads data from the serial port and puts it in the queue.
         This is the child process.
         '''
+        baseline = None  # store the first data sample per channel
         try:
             self.connect()
             line_buffer = []
@@ -129,6 +133,9 @@ class TRAiLLVisualizer:
                     data = self.parse(line_buffer)
                     if data.shape == (6, 8):
                         data = np.roll(data, -1)  # fix the data order problem
+                        if baseline is None:
+                            baseline = data.copy()
+                        data = data - baseline
                         self.vis_queue.put(data)
                         if not self.disable_csv:
                             self.saving_queue.put(data)
@@ -211,7 +218,7 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 8)), cmap='YlOrRd', vmin=0, vmax=400)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-200, vmax=200)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
