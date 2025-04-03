@@ -157,11 +157,18 @@ class TRAiLLActionDataset(Dataset):
     
     def _normalize_signal(self, signal):
         """
-        Normalize the signal per channel using z-score normalization.
+        Normalize the entire signal using the mean and standard deviation
+        of the most significant channel (i.e., the channel with the highest variance).
+        This ensures that all channels are scaled using the same factors,
+        preserving the contrast between channels.
         """
-        mean = signal.mean(axis=0)
-        std = signal.std(axis=0) + 1e-6  # avoid division by zero
-        normalized_signal = (signal - mean) / std
+        variances = np.var(signal, axis=0)
+
+        ref_channel = np.argmax(variances)
+        ref_mean = np.mean(signal[:, ref_channel])
+        ref_std = np.std(signal[:, ref_channel]) + 1e-6
+        normalized_signal = (signal - ref_mean) / ref_std
+
         return normalized_signal
     
     def __len__(self):
@@ -211,13 +218,13 @@ if __name__ == '__main__':
         
             trig_idx = trigger_indices[i]
             y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
-            ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
+            # ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
 
         avg_curve = np.mean(all_features[:, :, channel], axis=0)
         ax.plot(avg_curve, c='red', linewidth=2)
         
         ax.set_xlim([0, dataset.target_length - 1])
-        ax.set_ylim([-3, 3])
+        ax.set_ylim([-2, 2])
         ax.set_xticks([])
         ax.set_yticks([])
 
