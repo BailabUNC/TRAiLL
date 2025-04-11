@@ -88,7 +88,7 @@ class TRAiLLVisualizer:
         while not self.vis_queue.empty():
             latest_data = self.vis_queue.get()
         if latest_data is not None:
-            display_data = zoom(latest_data, (10, 10), order=1)
+            display_data = zoom(latest_data, (3, 3), order=1)
             self.img.set_data(display_data)
 
         current_status = self.shared_status.status
@@ -230,15 +230,10 @@ class TRAiLLVisualizer:
         terminate_button.on_clicked(self.terminate)
 
         # Create status buttons for the activities.
-        self.activities = ['open',
-                           'fist',
-                           'point',
-                           'pinch',
-                           'wave',
-                           'trigger',
-                           'grab',
-                           'thumbs-up',
-                           'swipe']
+        import string
+
+        self.activities = ["open"] + list(string.ascii_lowercase)
+    
         panel_width = 0.25
         ax_radio = plt.axes([ax_pos.x0 + ax_pos.width + 0.01,
                              ax_pos.y0,
