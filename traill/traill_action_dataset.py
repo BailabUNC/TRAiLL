@@ -17,7 +17,7 @@ class TRAiLLActionDataset(Dataset):
                  min_instance_length=5,
                  pre_trigger_points=15,
                  filter_order=3,
-                 filter_cutoff=7,
+                 filter_cutoff=[0.5, 10],
                  fs=100,
                  transform=None):
         """
@@ -102,7 +102,7 @@ class TRAiLLActionDataset(Dataset):
         Apply a butterworth filter to the sensor data.
         """
         sos = butter(self.filter_order, self.filter_cutoff,
-                     btype='low', fs=self.fs, output='sos', analog=False)
+                     btype='bandpass', fs=self.fs, output='sos', analog=False)
         filtered_data = sosfiltfilt(sos, sensor_data, axis=0, padlen=self.target_length // 2)
         return filtered_data
 
@@ -227,5 +227,7 @@ if __name__ == '__main__':
         ax.set_ylim([-2, 2])
         ax.set_xticks([])
         ax.set_yticks([])
+    
+    plt.suptitle(args.test_name)
 
     plt.show()

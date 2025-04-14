@@ -88,7 +88,7 @@ class TRAiLLVisualizer:
         while not self.vis_queue.empty():
             latest_data = self.vis_queue.get()
         if latest_data is not None:
-            display_data = zoom(latest_data, (10, 10), order=1)
+            display_data = zoom(latest_data, (5, 5), order=1)
             self.img.set_data(display_data)
 
         current_status = self.shared_status.status
