@@ -56,6 +56,7 @@ class TRAiLLActionDataset(Dataset):
 
         # Load and process the data file
         self.instances = self._prepare_instances()
+        self.instances = self._filter_outliers()
 
     def _prepare_instances(self):
         # Load the csv files
@@ -179,6 +180,28 @@ class TRAiLLActionDataset(Dataset):
 
         return normalized_signal
     
+    def _filter_outliers(self, std_factor=3):
+        """
+        Remove any instance whose feature at any (timestep, channel)
+        falls outside [mean-std, mean+std] computed across all instances.
+        """
+        if self.instances is None or len(self.instances) == 0:
+            return
+        # stack to shape (N_instances, T, C)
+        feats = np.stack([inst['features'] for inst in self.instances], axis=0)
+        # mean/std at each (t, c)
+        means = feats.mean(axis=0)
+        stds  = feats.std(axis=0)
+
+        filtered = []
+        for inst in self.instances:
+            f = inst['features']  # shape (T, C)
+            # keep only if every point in every channel is within mean±std
+            inlier_mask = (f >= (means - std_factor * stds)) & (f <= (means + std_factor * stds))
+            if inlier_mask.all():
+                filtered.append(inst)
+        return filtered
+
     def __len__(self):
         return len(self.instances)
     
@@ -235,7 +258,7 @@ if __name__ == '__main__':
         
             trig_idx = trigger_indices[i]
             y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
-            ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
+            # ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
 
         avg_curve = np.mean(all_features[:, :, channel], axis=0)
         ax.plot(avg_curve, c='red', linewidth=2)
