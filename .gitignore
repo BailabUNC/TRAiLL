@@ -4,3 +4,5 @@ result/
 */__pycache__
 
 raw_data/*.csv
+*_MACOSX*
+*.DS_Store
