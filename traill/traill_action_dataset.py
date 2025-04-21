@@ -83,7 +83,11 @@ class TRAiLLActionDataset(Dataset):
                 if prev_label == 'open':
                     preceding_data = groups[idx - 1][1].iloc[:, 2:].values.astype(np.float32)
 
-            trimmed_data, trigger_offset = self._align_onset(sensor_data, preceding_data)
+            following_data = None
+            if idx + 1 < len(groups) and groups[idx + 1][1]['status'].iloc[0] == 'open':
+                following_data = groups[idx + 1][1].iloc[:, 2:].values.astype(np.float32)
+
+            trimmed_data, trigger_offset = self._align_onset(sensor_data, preceding_data, following_data)
 
             # Resample and normalize the trimmed data.
             sensor_data_resampled, scaled_trigger = self._resample_signal(trimmed_data, trigger_offset)
@@ -106,7 +110,7 @@ class TRAiLLActionDataset(Dataset):
         filtered_data = sosfiltfilt(sos, sensor_data, axis=0, padlen=self.target_length // 2)
         return filtered_data
 
-    def _align_onset(self, active_data, preceding_data):
+    def _align_onset(self, active_data, preceding_data, following_data):
         """
         Detect the gesture onset using only the active_data.
         Then, if preceding_data is provided and the active onset occurs within 
@@ -121,11 +125,9 @@ class TRAiLLActionDataset(Dataset):
         diff_norm = np.linalg.norm(np.diff(active_data, axis=0), axis=1)
         threshold = self.onset_threshold_factor * np.max(diff_norm)
         onset_indices = np.where(diff_norm > threshold)[0]
-        if onset_indices.size > 0:
-            onset_index_active = onset_indices[0]
-        else:
-            onset_index_active = 0
+        onset_index_active = int(onset_indices[0]) if onset_indices.size > 0 else 0
         
+        # If we have preceding_data, handle both cases
         if preceding_data is not None:
             # Determine how many pre-trigger points we need from the active group.
             extra_needed = self.pre_trigger_points - onset_index_active
@@ -133,10 +135,16 @@ class TRAiLLActionDataset(Dataset):
                 # Use as many rows as available from preceding_data (up to extra_needed)
                 num_rows_preceding = preceding_data.shape[0]
                 rows_to_prepend = preceding_data[max(0, num_rows_preceding - extra_needed):]
+                concatenated_data = np.concatenate((rows_to_prepend, active_data), axis=0)
+                trigger_offset = rows_to_prepend.shape[0] + onset_index_active
             else:
-                rows_to_prepend = np.empty((0, active_data.shape[1]))
-            concatenated_data = np.concatenate((rows_to_prepend, active_data), axis=0)
-            trigger_offset = rows_to_prepend.shape[0] + onset_index_active
+                num_rows_to_trim = -extra_needed
+                trimmed_data = active_data[num_rows_to_trim:]
+                trigger_offset = self.pre_trigger_points
+                if following_data is not None and num_rows_to_trim > 0:
+                    # If we have following_data, append it to the trimmed data.
+                    rows_to_append = following_data[:num_rows_to_trim]
+                    concatenated_data = np.concatenate((trimmed_data, rows_to_append), axis=0)
             return concatenated_data, trigger_offset
         else:
             # Without preceding data, simply trace back within active_data.
@@ -193,15 +201,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('person', type=str,
                         help='Name of the participant.')
-    parser.add_argument('test_name', type=str,
-                        help='Name of the data csv file to process.')
+    parser.add_argument('test_path', nargs='+',
+                        help='Path components (without .csv) under data/<person> to the CSV file, e.g. subfolder session1.')
     parser.add_argument('--pre-trigger-points', default=10, type=int,
                         help='Number of points to trace back before the detected onset.')
     args = parser.parse_args()
-    path = os.path.join('data', args.person, args.test_name + '.csv')
+    rel_path = os.path.join(*args.test_path)
+    path = os.path.join('data', args.person, rel_path + '.csv')
 
     dataset = TRAiLLActionDataset(path, pre_trigger_points=args.pre_trigger_points)
-    torch.save(dataset, os.path.join('data/processed', f'dataset-{args.person}-{args.test_name}.pt'))
+    out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_path[-1]}.pt')
+    os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
+    print(f'Saving dataset to {out_path}...')
+    # Save the dataset to a .pt file
+    torch.save(dataset, out_path)
+    print(f'Saved dataset with {len(dataset)} instances.')
 
     print(f'Visualizing {len(dataset)} instances...')
 
@@ -221,7 +235,7 @@ if __name__ == '__main__':
         
             trig_idx = trigger_indices[i]
             y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
-            # ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
+            ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
 
         avg_curve = np.mean(all_features[:, :, channel], axis=0)
         ax.plot(avg_curve, c='red', linewidth=2)
@@ -231,6 +245,6 @@ if __name__ == '__main__':
         ax.set_xticks([])
         ax.set_yticks([])
     
-    plt.suptitle(args.test_name)
+    plt.suptitle(args.test_path[-1], fontsize=16)
 
     plt.show()
