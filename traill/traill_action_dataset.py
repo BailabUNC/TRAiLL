@@ -1,4 +1,4 @@
-# traill_dataset.py
+# traill_action_dataset.py
 
 import os
 import argparse
@@ -195,10 +195,13 @@ if __name__ == '__main__':
                         help='Name of the participant.')
     parser.add_argument('test_name', type=str,
                         help='Name of the data csv file to process.')
+    parser.add_argument('--pre-trigger-points', default=10, type=int,
+                        help='Number of points to trace back before the detected onset.')
     args = parser.parse_args()
     path = os.path.join('data', args.person, args.test_name + '.csv')
 
-    dataset = TRAiLLActionDataset(path)
+    dataset = TRAiLLActionDataset(path, pre_trigger_points=args.pre_trigger_points)
+    torch.save(dataset, os.path.join('data/processed', f'dataset-{args.person}-{args.test_name}.pt'))
 
     print(f'Visualizing {len(dataset)} instances...')
 
