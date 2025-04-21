@@ -88,7 +88,7 @@ class TRAiLLVisualizer:
         while not self.vis_queue.empty():
             latest_data = self.vis_queue.get()
         if latest_data is not None:
-            display_data = zoom(latest_data, (5, 5), order=1)
+            display_data = zoom(latest_data, (3, 3), order=1)
             self.img.set_data(display_data)
 
         current_status = self.shared_status.status
@@ -218,7 +218,7 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-200, vmax=200)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-100, vmax=100)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
