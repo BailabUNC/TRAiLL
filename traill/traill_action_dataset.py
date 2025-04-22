@@ -2,12 +2,14 @@
 
 import os
 import argparse
+import glob
 
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, sosfiltfilt, resample
 import torch
 from torch.utils.data import Dataset
+import matplotlib.pyplot as plt
 
 class TRAiLLActionDataset(Dataset):
     def __init__(self,
@@ -17,7 +19,7 @@ class TRAiLLActionDataset(Dataset):
                  min_instance_length=5,
                  pre_trigger_points=15,
                  filter_order=3,
-                 filter_cutoff=[0.5, 10],
+                 filter_cutoff=[0.2, 30],
                  fs=100,
                  transform=None):
         """
@@ -88,10 +90,10 @@ class TRAiLLActionDataset(Dataset):
             if idx + 1 < len(groups) and groups[idx + 1][1]['status'].iloc[0] == 'open':
                 following_data = groups[idx + 1][1].iloc[:, 2:].values.astype(np.float32)
 
-            trimmed_data, trigger_offset = self._align_onset(sensor_data, preceding_data, following_data)
+            aligned_data, trigger_offset = self._align_onset(sensor_data, preceding_data, following_data)
 
             # Resample and normalize the trimmed data.
-            sensor_data_resampled, scaled_trigger = self._resample_signal(trimmed_data, trigger_offset)
+            sensor_data_resampled, scaled_trigger = self._resample_signal(aligned_data, trigger_offset)
             sensor_data_normalized = self._normalize_signal(sensor_data_resampled)
 
             instances.append({
@@ -146,6 +148,8 @@ class TRAiLLActionDataset(Dataset):
                     # If we have following_data, append it to the trimmed data.
                     rows_to_append = following_data[:num_rows_to_trim]
                     concatenated_data = np.concatenate((trimmed_data, rows_to_append), axis=0)
+                else:
+                    concatenated_data = trimmed_data
             return concatenated_data, trigger_offset
         else:
             # Without preceding data, simply trace back within active_data.
@@ -228,46 +232,57 @@ if __name__ == '__main__':
                         help='Path components (without .csv) under data/<person> to the CSV file, e.g. subfolder session1.')
     parser.add_argument('--pre-trigger-points', default=10, type=int,
                         help='Number of points to trace back before the detected onset.')
+    parser.add_argument('--batch', action='store_true',
+                        help='If set, treat test_path as a folder and process all CSV files in it.')
     args = parser.parse_args()
-    rel_path = os.path.join(*args.test_path)
-    path = os.path.join('data', args.person, rel_path + '.csv')
 
-    dataset = TRAiLLActionDataset(path, pre_trigger_points=args.pre_trigger_points)
-    out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_path[-1]}.pt')
-    os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
-    print(f'Saving dataset to {out_path}...')
-    # Save the dataset to a .pt file
-    torch.save(dataset, out_path)
-    print(f'Saved dataset with {len(dataset)} instances.')
+    rel_root = os.path.join(*args.test_path)
+    person_dir = os.path.join('data', args.person)
 
-    print(f'Visualizing {len(dataset)} instances...')
+    if args.batch:
+        csv_folder = os.path.join(person_dir, rel_root)
+        csv_files = glob.glob(os.path.join(csv_folder, '*.csv'))
+    else:
+        csv_files = [os.path.join(person_dir, rel_root + '.csv')]
 
-    features_list = []
-    for features, _ in dataset:
-        features_list.append(features.numpy())
-    trigger_indices = [inst['trigger_index'] for inst in dataset.instances]
-    all_features = np.stack(features_list, axis=0)  # shape: (num_instances, target_length, num_channels)
-    num_instances, target_length, num_channels = all_features.shape
+    for csv in csv_files:
+        # derive relative path under data/<person>
+        rel = os.path.relpath(csv, person_dir)
+        rel_no_text = os.path.splitext(rel)[0]
 
-    import matplotlib.pyplot as plt
+        print(f'Processing {csv}...')
+        # Load, process, and save the dataset
+        dataset = TRAiLLActionDataset(csv, pre_trigger_points=args.pre_trigger_points)
+        out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
+        os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
+        print(f'Saving dataset to {out_path}...')
+        torch.save(dataset, out_path)
+        print(f'[{rel_no_text}] → {out_path} ({len(dataset)} instances)')
 
-    fig, axes = plt.subplots(nrows=6, ncols=8, figsize=(16, 12))
-    for channel, ax in enumerate(axes.flat):
-        for i in range(num_instances):
-            ax.plot(all_features[i, :, channel], c='lightgray', alpha=0.2)
+        print(f'Visualizing {len(dataset)} instances...')
+
+        features_list = [f.numpy() for f, _ in dataset]
+        trigger_indices = [inst['trigger_index'] for inst in dataset.instances]
+        all_features = np.stack(features_list, axis=0)  # shape: (num_instances, target_length, num_channels)
+        num_instances, target_length, num_channels = all_features.shape
+
+        fig, axes = plt.subplots(nrows=6, ncols=8, figsize=(16, 12))
+        for channel, ax in enumerate(axes.flat):
+            for i in range(num_instances):
+                ax.plot(all_features[i, :, channel], c='lightgray', alpha=0.2)
+            
+                trig_idx = trigger_indices[i]
+                y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
+                # ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
+
+            avg_curve = np.mean(all_features[:, :, channel], axis=0)
+            ax.plot(avg_curve, c='red', linewidth=2)
+            
+            ax.set_xlim([0, dataset.target_length - 1])
+            ax.set_ylim([-2, 2])
+            ax.set_xticks([])
+            ax.set_yticks([])
         
-            trig_idx = trigger_indices[i]
-            y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
-            # ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
+        plt.suptitle(rel_no_text, fontsize=16)
 
-        avg_curve = np.mean(all_features[:, :, channel], axis=0)
-        ax.plot(avg_curve, c='red', linewidth=2)
-        
-        ax.set_xlim([0, dataset.target_length - 1])
-        ax.set_ylim([-2, 2])
-        ax.set_xticks([])
-        ax.set_yticks([])
-    
-    plt.suptitle(args.test_path[-1], fontsize=16)
-
-    plt.show()
+        plt.show()
