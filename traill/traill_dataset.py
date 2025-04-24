@@ -3,6 +3,7 @@
 import os
 import argparse
 import glob
+import string
 
 import numpy as np
 import pandas as pd
@@ -11,7 +12,7 @@ import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
-class TRAiLLActionDataset(Dataset):
+class TRAiLLDataset(Dataset):
     def __init__(self,
                  csv_path,
                  target_length=128,
@@ -55,6 +56,8 @@ class TRAiLLActionDataset(Dataset):
             'thumbs-up': 7,
             'swipe': 8,
         }
+        # Add lowercase letters for gesture labels
+        self.label_map.update({k: v for k, v in zip(string.ascii_lowercase, range(9, 35))})
 
         # Load and process the data file
         self.instances = self._prepare_instances()
@@ -92,8 +95,10 @@ class TRAiLLActionDataset(Dataset):
 
             aligned_data, trigger_offset = self._align_onset(sensor_data, preceding_data, following_data)
 
+            trimmed_data = self._trim_tail(aligned_data)
+
             # Resample and normalize the trimmed data.
-            sensor_data_resampled, scaled_trigger = self._resample_signal(aligned_data, trigger_offset)
+            sensor_data_resampled, scaled_trigger = self._resample_signal(trimmed_data, trigger_offset)
             sensor_data_normalized = self._normalize_signal(sensor_data_resampled)
 
             instances.append({
@@ -157,6 +162,9 @@ class TRAiLLActionDataset(Dataset):
             trigger_offset = onset_index_active - effective_start
             trimmed_data = active_data[effective_start:]
             return trimmed_data, trigger_offset
+        
+    def _trim_tail(self, signal):
+        return signal
 
     def _resample_signal(self, signal, trigger_offset):
         """
@@ -234,6 +242,8 @@ if __name__ == '__main__':
                         help='Number of points to trace back before the detected onset.')
     parser.add_argument('--batch', action='store_true',
                         help='If set, treat test_path as a folder and process all CSV files in it.')
+    parser.add_argument('--no-plot', action='store_true',
+                        help='If set, do not plot the dataset.')
     args = parser.parse_args()
 
     rel_root = os.path.join(*args.test_path)
@@ -252,7 +262,7 @@ if __name__ == '__main__':
 
         print(f'Processing {csv}...')
         # Load, process, and save the dataset
-        dataset = TRAiLLActionDataset(csv, pre_trigger_points=args.pre_trigger_points)
+        dataset = TRAiLLDataset(csv, pre_trigger_points=args.pre_trigger_points)
         out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
         os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
         print(f'Saving dataset to {out_path}...')
@@ -266,6 +276,9 @@ if __name__ == '__main__':
         all_features = np.stack(features_list, axis=0)  # shape: (num_instances, target_length, num_channels)
         num_instances, target_length, num_channels = all_features.shape
 
+        if args.no_plot:
+            continue
+        
         fig, axes = plt.subplots(nrows=6, ncols=8, figsize=(16, 12))
         for channel, ax in enumerate(axes.flat):
             for i in range(num_instances):

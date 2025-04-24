@@ -1,6 +1,8 @@
 # ring_visualization.py
 
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import argparse
 
 import numpy as np
@@ -10,7 +12,7 @@ import matplotlib.patches as patches
 from math import pi
 from cmap import Colormap
 
-from traill_action_dataset import TRAiLLActionDataset
+from traill.traill_dataset import TRAiLLDataset
 
 def load_data(args):
     # load dataset from saved pt file
@@ -19,11 +21,11 @@ def load_data(args):
     print(f'Loaded dataset with {len(dataset)} instances.')
     return dataset
 
-def draw_circle(dataset: TRAiLLActionDataset,
+def draw_circle(dataset: TRAiLLDataset,
                 cmap: Colormap,
                 interval: float,
-                inner_radius: float = 4.0,
-                outer_radius: float = 5.0):
+                inner_radius: float = 3.0,
+                outer_radius: float = 4.0):
     """
     Plot the average waveform of each channel along a circle.
     
