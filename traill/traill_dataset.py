@@ -19,6 +19,7 @@ class TRAiLLDataset(Dataset):
                  onset_threshold_factor=0.5,
                  min_instance_length=5,
                  pre_trigger_points=15,
+                 post_trigger_points=15,
                  filter_order=3,
                  filter_cutoff=[0.2, 30],
                  fs=100,
@@ -40,6 +41,7 @@ class TRAiLLDataset(Dataset):
         self.onset_threshold_factor = onset_threshold_factor
         self.min_instance_length = min_instance_length
         self.pre_trigger_points = pre_trigger_points
+        self.post_trigger_points = post_trigger_points
         self.filter_order = filter_order
         self.filter_cutoff = filter_cutoff
         self.fs = fs
@@ -61,7 +63,7 @@ class TRAiLLDataset(Dataset):
 
         # Load and process the data file
         self.instances = self._prepare_instances()
-        self.instances = self._filter_outliers()
+        self.instances = self._filter_outliers(std_factor=2.8)
 
     def _prepare_instances(self):
         # Load the csv files
@@ -164,7 +166,33 @@ class TRAiLLDataset(Dataset):
             return trimmed_data, trigger_offset
         
     def _trim_tail(self, signal):
-        return signal
+        """
+        Trim off any trailing "rest" after the gesture.
+        Uses only past data (no peeking ahead), by finding
+        the last index where the derivative norm exceeds 
+        `onset_threshold_facter * max_derivative`.
+        """
+        signal_length = signal.shape[0]
+
+        # if very short, nothing to trim
+        if signal_length < 2:
+            return signal
+        
+        # compute frame-to-frame movement magnitude
+        diff_norm = np.linalg.norm(np.diff(signal, axis=0), axis=1)
+        threshold = self.onset_threshold_factor * np.max(diff_norm)
+
+        # find all frames above threshold
+        idxs = np.where(diff_norm > threshold)[0]
+        if idxs.size == 0:
+            # never moved -> keep entire signal
+            return signal
+
+        # last "active" frame is idx + 1 (because diff_norm is between frames)
+        last_active = idxs[-1] + 1
+
+        end_idx = min(last_active + self.post_trigger_points, signal_length)
+        return signal[:end_idx]
 
     def _resample_signal(self, signal, trigger_offset):
         """
@@ -238,12 +266,16 @@ if __name__ == '__main__':
                         help='Name of the participant.')
     parser.add_argument('test_path', nargs='+',
                         help='Path components (without .csv) under data/<person> to the CSV file, e.g. subfolder session1.')
-    parser.add_argument('--pre-trigger-points', default=10, type=int,
+    parser.add_argument('--onset-threshold', default=0.5, type=float,
+                        help='Fraction of max derivative norm used to detect the gesture onset.')
+    parser.add_argument('--pre-trigger-points', default=15, type=int,
                         help='Number of points to trace back before the detected onset.')
     parser.add_argument('--batch', action='store_true',
                         help='If set, treat test_path as a folder and process all CSV files in it.')
     parser.add_argument('--no-plot', action='store_true',
                         help='If set, do not plot the dataset.')
+    parser.add_argument('--no-save', action='store_true',
+                        help='If set, do not save the dataset.')
     args = parser.parse_args()
 
     rel_root = os.path.join(*args.test_path)
@@ -262,12 +294,18 @@ if __name__ == '__main__':
 
         print(f'Processing {csv}...')
         # Load, process, and save the dataset
-        dataset = TRAiLLDataset(csv, pre_trigger_points=args.pre_trigger_points)
-        out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
-        os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
-        print(f'Saving dataset to {out_path}...')
-        torch.save(dataset, out_path)
-        print(f'[{rel_no_text}] → {out_path} ({len(dataset)} instances)')
+        dataset = TRAiLLDataset(csv, onset_threshold_factor=args.onset_threshold, pre_trigger_points=args.pre_trigger_points)
+
+        # Skip saving if --no-save is set
+        if not args.no_save:
+            out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
+            os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
+            print(f'Saving dataset to {out_path}...')
+            torch.save(dataset, out_path)
+            print(f'[{rel_no_text}] → {out_path} ({len(dataset)} instances)')
+
+        else:
+            print(f'Skipping save for {csv}...')
 
         print(f'Visualizing {len(dataset)} instances...')
 
@@ -292,7 +330,7 @@ if __name__ == '__main__':
             ax.plot(avg_curve, c='red', linewidth=2)
             
             ax.set_xlim([0, dataset.target_length - 1])
-            ax.set_ylim([-2, 2])
+            ax.set_ylim([-3, 3])
             ax.set_xticks([])
             ax.set_yticks([])
         
