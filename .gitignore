@@ -4,5 +4,6 @@ result/
 __pycache__/
 
 raw_data/*.csv
+data/augmented_data/
 *_MACOSX*
 *.DS_Store
