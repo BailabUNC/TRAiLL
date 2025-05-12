@@ -16,8 +16,16 @@ def evaluate_model(model, dataloader, device):
             x, y = x.to(device), y.to(device)
             logits = model(x)
             preds = logits.argmax(dim=1)  # Get predicted class
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(y.cpu().numpy())
+            all_preds.extend(preds.cpu().tolist())  # Convert to plain Python list
+            all_labels.extend(y.cpu().tolist())  # Convert to plain Python list
+
+    min_labels = min(all_labels)  # Find the minimum label value
+    all_labels = [label - min_labels for label in all_labels]  # Ensure labels are integers
+
+    # Print the first 100 predictions and labels for debugging
+    print("First 100 predictions and labels:")
+    print("Predictions:", all_preds[:100])
+    print("Labels:", all_labels[:100])
 
     # Compute metrics
     accuracy = accuracy_score(all_labels, all_preds)
