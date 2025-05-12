@@ -21,22 +21,12 @@ def generate_pattern(person: str, pattern_type: str) -> str:
     person : str
         Name of the participant.
     pattern_type : str
-        Type of pattern to generate. Must be either "letters" or "commands".
+        Type of pattern to generate. Must be one of "letters", "commands", or "augmented".
     
     Returns
     -------
     str
         Compiled regex pattern string
-    
-    Examples
-    --------
-    >>> pattern = generate_pattern("john",."letters")
-    >>> re.match(pattern, "dataset-john-A.pt")  # Will match
-    >>> re.match(pattern, "dataset-jane-A.pt")  # Won't match
-    
-    >>> pattern = generate_pattern("commands", "john")
-    >>> re.match(pattern, "dataset-john-fist.pt")  # Will match
-    >>> re.match(pattern, "dataset-jane-fist.pt")  # Won't match
     """
     # Escape any special regex characters in person name
     person_escaped = re.escape(person)
@@ -46,6 +36,7 @@ def generate_pattern(person: str, pattern_type: str) -> str:
     patterns = {
         'letters': base + r'(?P<letter>[A-Za-z])' + r'\.pt$',
         'commands': base + r'(?P<command>open|fist|point|pinch|wave|trigger|grab|thumbs_up|swipe)' + r'\.pt$',
+        'augmented': base + r'(?P<letter>[A-Za-z])_(?=.*(offset|rotate)).*\.pt$',
     }
     
     if pattern_type not in patterns:
@@ -96,15 +87,15 @@ def generate_tensor(datasets: list[TRAiLLDataset]) -> tuple[torch.Tensor, torch.
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Concatenate TRAiLL datasets.')
     parser.add_argument('person', type=str, help='Name of the participant.')
-    parser.add_argument('test_name', type=str, help='Name of the data csv file to process.')
-    parser.add_argument('--data_dir', type=str, default='data/processed', help='Directory containing dataset files.')
+    parser.add_argument('pattern_name', type=str, help='Name of the pattern to match dataset files.')
+    parser.add_argument('--data-dir', type=str, default='data/processed', help='Directory containing dataset files.')
     args = parser.parse_args()
 
-    pattern = generate_pattern(args.person, args.test_name)
+    pattern = generate_pattern(args.person, args.pattern_name)
     datasets = load_datasets(args.data_dir, pattern)
     features, labels = generate_tensor(datasets)
 
     # Save the concatenated dataset
-    output_path = os.path.join(args.data_dir, f'concatenated_dataset-{args.person}-{args.test_name}.pt')
+    output_path = os.path.join(args.data_dir, f'concatenated_dataset-{args.person}-{args.pattern_name}.pt')
     torch.save({'features': features, 'labels': labels}, output_path)
     print(f'Saved concatenated dataset to {output_path}.')
