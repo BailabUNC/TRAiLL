@@ -3,7 +3,6 @@
 import os
 import math
 import argparse
-import json
 
 import torch
 import torch.nn as nn
@@ -22,13 +21,6 @@ def get_dataloaders(path, batch_size, val_split, generator=None):
     dataset = torch.load(path, map_location='cpu', weights_only=False)
     features, labels = dataset['features'], dataset['labels']
     print('Input features shape:', dataset['features'].shape)
-
-    # Reshape the augmented dataset to merge the augmentation dimension
-    N, A, T, C = features.shape
-    features = features.view(N * A, T, C)  # [N * A, T, C]
-    labels = labels.view(N * A)            # [N * A]
-    print('Reshaped features shape:', features.shape)
-    print('Reshaped labels shape:', labels.shape)
 
     labels -= 9  # label offset
 
@@ -49,24 +41,17 @@ def get_dataloaders(path, batch_size, val_split, generator=None):
 
     return train_dl, val_dl, dataset
 
-def evaluate(model: nn.Module, dataloader: DataLoader, device, criterion=None):
+def evaluate(model: nn.Module, dataloader: DataLoader, device):
     model.eval()
     correct = 0
     total = 0
-    val_loss = 0.0
     with torch.no_grad():
         for x, y in dataloader:
             x, y = x.to(device), y.to(device)
-            logits = model(x)
-            if criterion:
-                loss = criterion(logits, y)
-                val_loss += loss.item() * x.size(0)
-            preds = logits.argmax(1)
+            preds = model(x).argmax(1)
             correct += (preds == y).sum().item()
-            total += y.size(0)
-    val_loss = val_loss / total if total else 0.0
-    val_acc = correct / total if total else 0.0
-    return val_acc, val_loss
+            total   += y.size(0)
+    return correct / total if total else 0.0
 
 def train(args):
     generator = set_seed()
@@ -86,7 +71,6 @@ def train(args):
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
-    history = {"epoch": [], "train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_acc = 0.0
     os.makedirs(args.out_dir, exist_ok=True)
 
@@ -113,7 +97,7 @@ def train(args):
             run_loss += loss.item() * x.size(0)
             run_correct += (logits.argmax(1) == y).sum().item()
 
-            # Update progress bar description
+            # Update progress bar description instead of using tqdm.write
             pbar.set_postfix({
                 'loss': f'{run_loss/seen:.4f}',
                 'acc': f'{run_correct/seen:.4f}'
@@ -122,27 +106,19 @@ def train(args):
         scheduler.step()
 
         train_loss = run_loss / seen
-        train_acc = run_correct / seen
-        val_acc, val_loss = evaluate(model, val_dl, device, criterion)
-
-        history["epoch"].append(epoch)
-        history["train_loss"].append(train_loss)
-        history["train_acc"].append(train_acc)
-        history["val_loss"].append(val_loss)
-        history["val_acc"].append(val_acc)
+        train_acc  = run_correct / seen
+        val_acc    = evaluate(model, val_dl, device)
 
         if val_acc > best_acc:
             best_acc = val_acc
             torch.save(model.state_dict(), os.path.join(args.out_dir, 'best_model.pth'))
 
-        print(f'Epoch {epoch:03d}/{args.epochs} | '
-              f'Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | '
-              f'Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | '
-              f'Best Val Acc: {best_acc:.4f}')
+        print(f'Epoch {epoch:03d}/{args.epochs} | ',
+              f'Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | ',
+              f'Val Acc: {val_acc:.4f} | Best Val Acc: {best_acc:.4f}')
     
     print(f'\nTraining finished - best validation accuracy: {best_acc:.4f}')
-    with open(os.path.join(args.out_dir, "history.json"), "w") as f:
-        json.dump(history, f, indent=2)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train TRAiLL CNN-GRU classifier')
