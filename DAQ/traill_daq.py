@@ -29,7 +29,7 @@ class TRAiLLVisualizer:
                  baud_rate=115200,
                  data_folder=None,
                  timeout=0.5,
-                 action_duration=100,
+                 action_duration=150,
                  disable_csv=False):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
