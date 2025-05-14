@@ -274,9 +274,9 @@ class TRAiLLVisualizer:
                     self.filepath,
                     self.terminate_loop_evt,
                     self.shared_status,
-                    self.action_duration
-                    )
+                    self.action_duration,
                 )
+            )
             self.saving_process.start()
 
         # main process
