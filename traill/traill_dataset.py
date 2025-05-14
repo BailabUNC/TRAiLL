@@ -1,23 +1,27 @@
-# traill_dataset.py
+# traill_action_dataset.py
 
 import os
 import argparse
+import glob
+import string
 
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, sosfiltfilt, resample
 import torch
 from torch.utils.data import Dataset
+import matplotlib.pyplot as plt
 
-class TRAiLLActionDataset(Dataset):
+class TRAiLLDataset(Dataset):
     def __init__(self,
                  csv_path,
                  target_length=128,
                  onset_threshold_factor=0.5,
                  min_instance_length=5,
                  pre_trigger_points=15,
+                 post_trigger_points=15,
                  filter_order=3,
-                 filter_cutoff=7,
+                 filter_cutoff=[0.2, 30],
                  fs=100,
                  transform=None):
         """
@@ -37,6 +41,7 @@ class TRAiLLActionDataset(Dataset):
         self.onset_threshold_factor = onset_threshold_factor
         self.min_instance_length = min_instance_length
         self.pre_trigger_points = pre_trigger_points
+        self.post_trigger_points = post_trigger_points
         self.filter_order = filter_order
         self.filter_cutoff = filter_cutoff
         self.fs = fs
@@ -53,9 +58,12 @@ class TRAiLLActionDataset(Dataset):
             'thumbs-up': 7,
             'swipe': 8,
         }
+        # Add lowercase letters for gesture labels
+        self.label_map.update({k: v for k, v in zip(string.ascii_lowercase, range(9, 35))})
 
         # Load and process the data file
         self.instances = self._prepare_instances()
+        self.instances = self._filter_outliers(std_factor=2.8)
 
     def _prepare_instances(self):
         # Load the csv files
@@ -83,7 +91,13 @@ class TRAiLLActionDataset(Dataset):
                 if prev_label == 'open':
                     preceding_data = groups[idx - 1][1].iloc[:, 2:].values.astype(np.float32)
 
-            trimmed_data, trigger_offset = self._align_onset(sensor_data, preceding_data)
+            following_data = None
+            if idx + 1 < len(groups) and groups[idx + 1][1]['status'].iloc[0] == 'open':
+                following_data = groups[idx + 1][1].iloc[:, 2:].values.astype(np.float32)
+
+            aligned_data, trigger_offset = self._align_onset(sensor_data, preceding_data, following_data)
+
+            trimmed_data = self._trim_tail(aligned_data)
 
             # Resample and normalize the trimmed data.
             sensor_data_resampled, scaled_trigger = self._resample_signal(trimmed_data, trigger_offset)
@@ -102,11 +116,11 @@ class TRAiLLActionDataset(Dataset):
         Apply a butterworth filter to the sensor data.
         """
         sos = butter(self.filter_order, self.filter_cutoff,
-                     btype='low', fs=self.fs, output='sos', analog=False)
+                     btype='bandpass', fs=self.fs, output='sos', analog=False)
         filtered_data = sosfiltfilt(sos, sensor_data, axis=0, padlen=self.target_length // 2)
         return filtered_data
 
-    def _align_onset(self, active_data, preceding_data):
+    def _align_onset(self, active_data, preceding_data, following_data):
         """
         Detect the gesture onset using only the active_data.
         Then, if preceding_data is provided and the active onset occurs within 
@@ -121,11 +135,9 @@ class TRAiLLActionDataset(Dataset):
         diff_norm = np.linalg.norm(np.diff(active_data, axis=0), axis=1)
         threshold = self.onset_threshold_factor * np.max(diff_norm)
         onset_indices = np.where(diff_norm > threshold)[0]
-        if onset_indices.size > 0:
-            onset_index_active = onset_indices[0]
-        else:
-            onset_index_active = 0
+        onset_index_active = int(onset_indices[0]) if onset_indices.size > 0 else 0
         
+        # If we have preceding_data, handle both cases
         if preceding_data is not None:
             # Determine how many pre-trigger points we need from the active group.
             extra_needed = self.pre_trigger_points - onset_index_active
@@ -133,10 +145,18 @@ class TRAiLLActionDataset(Dataset):
                 # Use as many rows as available from preceding_data (up to extra_needed)
                 num_rows_preceding = preceding_data.shape[0]
                 rows_to_prepend = preceding_data[max(0, num_rows_preceding - extra_needed):]
+                concatenated_data = np.concatenate((rows_to_prepend, active_data), axis=0)
+                trigger_offset = rows_to_prepend.shape[0] + onset_index_active
             else:
-                rows_to_prepend = np.empty((0, active_data.shape[1]))
-            concatenated_data = np.concatenate((rows_to_prepend, active_data), axis=0)
-            trigger_offset = rows_to_prepend.shape[0] + onset_index_active
+                num_rows_to_trim = -extra_needed
+                trimmed_data = active_data[num_rows_to_trim:]
+                trigger_offset = self.pre_trigger_points
+                if following_data is not None and num_rows_to_trim > 0:
+                    # If we have following_data, append it to the trimmed data.
+                    rows_to_append = following_data[:num_rows_to_trim]
+                    concatenated_data = np.concatenate((trimmed_data, rows_to_append), axis=0)
+                else:
+                    concatenated_data = trimmed_data
             return concatenated_data, trigger_offset
         else:
             # Without preceding data, simply trace back within active_data.
@@ -144,6 +164,35 @@ class TRAiLLActionDataset(Dataset):
             trigger_offset = onset_index_active - effective_start
             trimmed_data = active_data[effective_start:]
             return trimmed_data, trigger_offset
+        
+    def _trim_tail(self, signal):
+        """
+        Trim off any trailing "rest" after the gesture.
+        Uses only past data (no peeking ahead), by finding
+        the last index where the derivative norm exceeds 
+        `onset_threshold_facter * max_derivative`.
+        """
+        signal_length = signal.shape[0]
+
+        # if very short, nothing to trim
+        if signal_length < 2:
+            return signal
+        
+        # compute frame-to-frame movement magnitude
+        diff_norm = np.linalg.norm(np.diff(signal, axis=0), axis=1)
+        threshold = self.onset_threshold_factor * np.max(diff_norm)
+
+        # find all frames above threshold
+        idxs = np.where(diff_norm > threshold)[0]
+        if idxs.size == 0:
+            # never moved -> keep entire signal
+            return signal
+
+        # last "active" frame is idx + 1 (because diff_norm is between frames)
+        last_active = idxs[-1] + 1
+
+        end_idx = min(last_active + self.post_trigger_points, signal_length)
+        return signal[:end_idx]
 
     def _resample_signal(self, signal, trigger_offset):
         """
@@ -171,6 +220,28 @@ class TRAiLLActionDataset(Dataset):
 
         return normalized_signal
     
+    def _filter_outliers(self, std_factor=3):
+        """
+        Remove any instance whose feature at any (timestep, channel)
+        falls outside [mean-std, mean+std] computed across all instances.
+        """
+        if self.instances is None or len(self.instances) == 0:
+            return
+        # stack to shape (N_instances, T, C)
+        feats = np.stack([inst['features'] for inst in self.instances], axis=0)
+        # mean/std at each (t, c)
+        means = feats.mean(axis=0)
+        stds  = feats.std(axis=0)
+
+        filtered = []
+        for inst in self.instances:
+            f = inst['features']  # shape (T, C)
+            # keep only if every point in every channel is within mean±std
+            inlier_mask = (f >= (means - std_factor * stds)) & (f <= (means + std_factor * stds))
+            if inlier_mask.all():
+                filtered.append(inst)
+        return filtered
+
     def __len__(self):
         return len(self.instances)
     
@@ -193,39 +264,76 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('person', type=str,
                         help='Name of the participant.')
-    parser.add_argument('test_name', type=str,
-                        help='Name of the data csv file to process.')
+    parser.add_argument('test_path', nargs='+',
+                        help='Path components (without .csv) under data/<person> to the CSV file, e.g. subfolder session1.')
+    parser.add_argument('--onset-threshold', default=0.5, type=float,
+                        help='Fraction of max derivative norm used to detect the gesture onset.')
+    parser.add_argument('--pre-trigger-points', default=15, type=int,
+                        help='Number of points to trace back before the detected onset.')
+    parser.add_argument('--batch', action='store_true',
+                        help='If set, treat test_path as a folder and process all CSV files in it.')
+    parser.add_argument('--no-plot', action='store_true',
+                        help='If set, do not plot the dataset.')
+    parser.add_argument('--no-save', action='store_true',
+                        help='If set, do not save the dataset.')
     args = parser.parse_args()
-    path = os.path.join('data', args.person, args.test_name + '.csv')
 
-    dataset = TRAiLLActionDataset(path)
+    rel_root = os.path.join(*args.test_path)
+    person_dir = os.path.join('data', args.person)
 
-    print(f'Visualizing {len(dataset)} instances...')
+    if args.batch:
+        csv_folder = os.path.join(person_dir, rel_root)
+        csv_files = glob.glob(os.path.join(csv_folder, '*.csv'))
+    else:
+        csv_files = [os.path.join(person_dir, rel_root + '.csv')]
 
-    features_list = []
-    for features, _ in dataset:
-        features_list.append(features.numpy())
-    trigger_indices = [inst['trigger_index'] for inst in dataset.instances]
-    all_features = np.stack(features_list, axis=0)  # shape: (num_instances, target_length, num_channels)
-    num_instances, target_length, num_channels = all_features.shape
+    for csv in csv_files:
+        # derive relative path under data/<person>
+        rel = os.path.relpath(csv, person_dir)
+        rel_no_text = os.path.splitext(rel)[0]
 
-    import matplotlib.pyplot as plt
+        print(f'Processing {csv}...')
+        # Load, process, and save the dataset
+        dataset = TRAiLLDataset(csv, onset_threshold_factor=args.onset_threshold, pre_trigger_points=args.pre_trigger_points)
 
-    fig, axes = plt.subplots(nrows=6, ncols=8, figsize=(16, 12))
-    for channel, ax in enumerate(axes.flat):
-        for i in range(num_instances):
-            ax.plot(all_features[i, :, channel], c='lightgray', alpha=0.2)
+        # Skip saving if --no-save is set
+        if not args.no_save:
+            out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
+            os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
+            print(f'Saving dataset to {out_path}...')
+            torch.save(dataset, out_path)
+            print(f'[{rel_no_text}] → {out_path} ({len(dataset)} instances)')
+
+        else:
+            print(f'Skipping save for {csv}...')
+
+        print(f'Visualizing {len(dataset)} instances...')
+
+        features_list = [f.numpy() for f, _ in dataset]
+        trigger_indices = [inst['trigger_index'] for inst in dataset.instances]
+        all_features = np.stack(features_list, axis=0)  # shape: (num_instances, target_length, num_channels)
+        num_instances, target_length, num_channels = all_features.shape
+
+        if args.no_plot:
+            continue
         
-            trig_idx = trigger_indices[i]
-            y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
-            # ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
+        fig, axes = plt.subplots(nrows=6, ncols=8, figsize=(16, 12))
+        for channel, ax in enumerate(axes.flat):
+            for i in range(num_instances):
+                ax.plot(all_features[i, :, channel], c='lightgray', alpha=0.2)
+            
+                trig_idx = trigger_indices[i]
+                y_val = all_features[i, trig_idx, channel] if trig_idx < target_length else np.nan
+                # ax.plot(trig_idx, y_val, marker='o', color='g', ms=6)
 
-        avg_curve = np.mean(all_features[:, :, channel], axis=0)
-        ax.plot(avg_curve, c='red', linewidth=2)
+            avg_curve = np.mean(all_features[:, :, channel], axis=0)
+            ax.plot(avg_curve, c='red', linewidth=2)
+            
+            ax.set_xlim([0, dataset.target_length - 1])
+            ax.set_ylim([-3, 3])
+            ax.set_xticks([])
+            ax.set_yticks([])
         
-        ax.set_xlim([0, dataset.target_length - 1])
-        ax.set_ylim([-2, 2])
-        ax.set_xticks([])
-        ax.set_yticks([])
+        plt.suptitle(rel_no_text, fontsize=16)
 
-    plt.show()
+        plt.show()

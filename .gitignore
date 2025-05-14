@@ -1,6 +1,9 @@
 .venv/
 .vscode/
 result/
-*/__pycache__
+__pycache__/
 
 raw_data/*.csv
+data/augmented/
+*_MACOSX*
+*.DS_Store
