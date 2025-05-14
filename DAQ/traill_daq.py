@@ -27,7 +27,7 @@ class TRAiLLVisualizer:
     def __init__(self,
                  serial_port,
                  baud_rate=115200,
-                 data_folder=None,
+                 data_folder=None, 
                  timeout=0.5,
                  action_duration=150,
                  disable_csv=False):
@@ -232,7 +232,7 @@ class TRAiLLVisualizer:
         # Create status buttons for the activities.
         import string
 
-        self.activities = ["open"] + list(string.ascii_lowercase)
+        self.activities = ["open"] + list(string.ascii_lowercase) + ["thumb", "index", "middle", "ring", "pinky"]
     
         panel_width = 0.25
         ax_radio = plt.axes([ax_pos.x0 + ax_pos.width + 0.01,
