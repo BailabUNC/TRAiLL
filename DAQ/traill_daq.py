@@ -29,7 +29,7 @@ class TRAiLLVisualizer:
                  baud_rate=115200,
                  data_folder=None, 
                  timeout=0.5,
-                 action_duration=150,
+                 action_duration=200,
                  disable_csv=False):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
@@ -218,7 +218,7 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-200, vmax=200)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-180, vmax=180)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
