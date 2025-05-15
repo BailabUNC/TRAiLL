@@ -266,6 +266,8 @@ if __name__ == '__main__':
                         help='Name of the participant.')
     parser.add_argument('test_path', nargs='+',
                         help='Path components (without .csv) under data/<person> to the CSV file, e.g. subfolder session1.')
+    parser.add_argument('--target-length', default=512, type=int,
+                        help='Number of time steps to resample each instance to.')
     parser.add_argument('--onset-threshold', default=0.5, type=float,
                         help='Fraction of max derivative norm used to detect the gesture onset.')
     parser.add_argument('--pre-trigger-points', default=15, type=int,
@@ -294,12 +296,10 @@ if __name__ == '__main__':
 
         print(f'Processing {csv}...')
         # Load, process, and save the dataset
-        dataset = TRAiLLDataset(csv, onset_threshold_factor=args.onset_threshold, pre_trigger_points=args.pre_trigger_points)
-
-        # Skip saving if --no-save is set
+        dataset = TRAiLLDataset(csv, target_length=args.target_length, onset_threshold_factor=args.onset_threshold, pre_trigger_points=args.pre_trigger_points)       # Skip saving if --no-save is set
         if not args.no_save:
-            out_path = os.path.join('data', 'processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
-            os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
+            out_path = os.path.join('data', '.processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
+            os.makedirs(os.path.join('data', '.processed'), exist_ok=True)
             print(f'Saving dataset to {out_path}...')
             torch.save(dataset, out_path)
             print(f'[{rel_no_text}] → {out_path} ({len(dataset)} instances)')
