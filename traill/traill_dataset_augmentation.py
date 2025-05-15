@@ -205,7 +205,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='TRAiLL dataset augmentation.')
     parser.add_argument('data_pt', help='Path to saved (features, labels) tensor file')
-    parser.add_argument('--out-dir', default='data/augmented', help='Output directory for augmented dataset.')
+    parser.add_argument('--out-dir', default='data/.augmented', help='Output directory for augmented dataset.')
     parser.add_argument('--num-aug', type=int, default=1000, help='Number of augmentations to generate.')
     parser.add_argument('--upsample', type=int, default=5, help='Upsample factor.')
     parser.add_argument('--shift', type=float, default=0.8, help='Maximum translation (grid cells).')

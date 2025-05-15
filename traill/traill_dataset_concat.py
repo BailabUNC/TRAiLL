@@ -88,7 +88,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Concatenate TRAiLL datasets.')
     parser.add_argument('person', type=str, help='Name of the participant.')
     parser.add_argument('pattern_name', type=str, help='Name of the pattern to match dataset files.')
-    parser.add_argument('--data-dir', type=str, default='data/processed', help='Directory containing dataset files.')
+    parser.add_argument('--data-dir', type=str, default='data/.processed', help='Directory containing dataset files.')
     args = parser.parse_args()
 
     pattern = generate_pattern(args.person, args.pattern_name)
