@@ -266,6 +266,8 @@ if __name__ == '__main__':
                         help='Name of the participant.')
     parser.add_argument('test_path', nargs='+',
                         help='Path components (without .csv) under data/<person> to the CSV file, e.g. subfolder session1.')
+    parser.add_argument('--group', default=None, type=int,
+                        help='Group name to filter the dataset by. If not set, there is only one group of data.')
     parser.add_argument('--target-length', default=512, type=int,
                         help='Number of time steps to resample each instance to.')
     parser.add_argument('--onset-threshold', default=0.5, type=float,
@@ -280,29 +282,33 @@ if __name__ == '__main__':
                         help='If set, do not save the dataset.')
     args = parser.parse_args()
 
-    rel_root = os.path.join(*args.test_path)
     person_dir = os.path.join('data', args.person)
 
+    test_dir = os.path.join(*args.test_path)
+    if args.group:
+        test_dir = f'{test_dir}_group_{args.group}'
+        
     if args.batch:
-        csv_folder = os.path.join(person_dir, rel_root)
-        csv_files = glob.glob(os.path.join(csv_folder, '*.csv'))
+        data_dir = os.path.join(person_dir, test_dir)
+        data_files = glob.glob(os.path.join(data_dir, '*.csv'))
     else:
-        csv_files = [os.path.join(person_dir, rel_root + '.csv')]
+        data_files = [os.path.join(person_dir, test_dir + '.csv')]
 
-    for csv in csv_files:
+    for csv in data_files:
         # derive relative path under data/<person>
-        rel = os.path.relpath(csv, person_dir)
-        rel_no_text = os.path.splitext(rel)[0]
+        csv_path = os.path.relpath(csv, person_dir)
+        csv_path_no_text = os.path.splitext(csv_path)[0]
 
         print(f'Processing {csv}...')
         # Load, process, and save the dataset
         dataset = TRAiLLDataset(csv, target_length=args.target_length, onset_threshold_factor=args.onset_threshold, pre_trigger_points=args.pre_trigger_points)       # Skip saving if --no-save is set
         if not args.no_save:
-            out_path = os.path.join('data', '.processed', f'dataset-{args.person}-{rel_no_text.split('\\')[-1]}.pt')
+            group_str = f'-group_{args.group}' if args.group else ''
+            out_path = os.path.join('data', '.processed', f'dataset-{args.person}-{csv_path_no_text.split('\\')[-1]}{group_str}.pt')
             os.makedirs(os.path.join('data', '.processed'), exist_ok=True)
             print(f'Saving dataset to {out_path}...')
             torch.save(dataset, out_path)
-            print(f'[{rel_no_text}] → {out_path} ({len(dataset)} instances)')
+            print(f'[{csv_path_no_text}] → {out_path} ({len(dataset)} instances)')
 
         else:
             print(f'Skipping save for {csv}...')
@@ -334,6 +340,6 @@ if __name__ == '__main__':
             ax.set_xticks([])
             ax.set_yticks([])
         
-        plt.suptitle(rel_no_text, fontsize=16)
+        plt.suptitle(csv_path_no_text, fontsize=16)
 
         plt.show()
