@@ -170,7 +170,10 @@ def main(args):
     
     torch.save({'features': out_features, 'labels': out_labels},
                os.path.join(args.out_dir, f'augmented_dataset_{args.num_aug}.pt'))
-    print(f'Saved augmented dataset to {os.path.join(args.out_dir, f'augmented_dataset_{args.num_aug}.pt')}')
+    if args.test_type is not None:
+        print(f'Saved augmented dataset to {os.path.join(args.out_dir, f'augmented_dataset_{args.test_type}_{args.num_aug}.pt')}')
+    else:
+        print(f'Saved augmented dataset to {os.path.join(args.out_dir, f'augmented_dataset_{args.num_aug}.pt')}')
 
     # Visualization of augmented data
     print("Visualizing augmented data...")
@@ -205,6 +208,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='TRAiLL dataset augmentation.')
     parser.add_argument('data_pt', help='Path to saved (features, labels) tensor file')
+    parser.add_argument('--test-type', type=str, default=None, help='Test type (e.g., "letter")')
     parser.add_argument('--out-dir', default='data/.augmented', help='Output directory for augmented dataset.')
     parser.add_argument('--num-aug', type=int, default=1000, help='Number of augmentations to generate.')
     parser.add_argument('--upsample', type=int, default=5, help='Upsample factor.')
