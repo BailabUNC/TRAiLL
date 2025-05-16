@@ -27,9 +27,9 @@ class TRAiLLVisualizer:
     def __init__(self,
                  serial_port,
                  baud_rate=115200,
-                 data_folder=None,
+                 data_folder=None, 
                  timeout=0.5,
-                 action_duration=100,
+                 action_duration=200,
                  disable_csv=False):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
@@ -218,7 +218,7 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-200, vmax=200)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-180, vmax=180)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
@@ -230,15 +230,10 @@ class TRAiLLVisualizer:
         terminate_button.on_clicked(self.terminate)
 
         # Create status buttons for the activities.
-        self.activities = ['open',
-                           'fist',
-                           'point',
-                           'pinch',
-                           'wave',
-                           'trigger',
-                           'grab',
-                           'thumbs-up',
-                           'swipe']
+        import string
+
+        self.activities = ["open"] + list(string.ascii_lowercase) + ["thumb", "index", "middle", "ring", "pinky"]
+    
         panel_width = 0.25
         ax_radio = plt.axes([ax_pos.x0 + ax_pos.width + 0.01,
                              ax_pos.y0,
@@ -286,18 +281,3 @@ class TRAiLLVisualizer:
 
         # main process
         self._visualization_process()
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(prog='TRAiLL visualizer')
-    parser.add_argument('--port', type=str, default='COM31', help='Port to connect to TRAiLL.')
-    parser.add_argument('--path', type=str, default=None, help='Path to save data.')
-    parser.add_argument('--disable-csv', action='store_true', help='Disable csv file saving.')
-    
-    args = parser.parse_args()
-    serial_port = args.port
-    path = args.path
-    disable_csv = args.disable_csv
-    
-    visualizer = TRAiLLVisualizer(serial_port=serial_port, data_folder=path, disable_csv=disable_csv)
-    visualizer.run()
-    

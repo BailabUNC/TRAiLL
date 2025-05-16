@@ -33,10 +33,12 @@ def generate_pattern(person: str, pattern_type: str) -> str:
     # Base pattern for both types
     base = f'dataset-{person_escaped}-'
     
+    group_suffix = r'(?:-group_\d+)?'
+
     patterns = {
-        'letters': base + r'(?P<letter>[A-Za-z])' + r'\.pt$',
-        'commands': base + r'(?P<command>open|fist|point|pinch|wave|trigger|grab|thumbs_up|swipe)' + r'\.pt$',
-        'augmented': base + r'(?P<letter>[A-Za-z])_(?=.*(offset|rotate)).*\.pt$',
+        'letters': base + r'(?P<letter>[A-Za-z])' + group_suffix + r'\.pt$',
+        'commands': base + r'(?P<command>open|fist|point|pinch|wave|trigger|grab|thumbs_up|swipe)' + group_suffix + r'\.pt$',
+        'augmented': base + r'(?P<letter>[A-Za-z])_(?=.*(offset|rotate)).*' + group_suffix + r'\.pt$',
     }
     
     if pattern_type not in patterns:
@@ -88,7 +90,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Concatenate TRAiLL datasets.')
     parser.add_argument('person', type=str, help='Name of the participant.')
     parser.add_argument('pattern_name', type=str, help='Name of the pattern to match dataset files.')
-    parser.add_argument('--data-dir', type=str, default='data/processed', help='Directory containing dataset files.')
+    parser.add_argument('--group', type=int, default=None, help='Group number for the dataset.')
+    parser.add_argument('--data-dir', type=str, default='data/.processed', help='Directory containing dataset files.')
     args = parser.parse_args()
 
     pattern = generate_pattern(args.person, args.pattern_name)
@@ -96,6 +99,9 @@ if __name__ == '__main__':
     features, labels = generate_tensor(datasets)
 
     # Save the concatenated dataset
-    output_path = os.path.join(args.data_dir, f'concatenated_dataset-{args.person}-{args.pattern_name}.pt')
+    if args.group is not None:
+        output_path = os.path.join(args.data_dir, f'concatenated_dataset-{args.person}-{args.pattern_name}-group_{args.group}.pt')
+    else:
+        output_path = os.path.join(args.data_dir, f'concatenated_dataset-{args.person}-{args.pattern_name}.pt')
     torch.save({'features': features, 'labels': labels}, output_path)
     print(f'Saved concatenated dataset to {output_path}.')
