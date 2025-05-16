@@ -1,4 +1,4 @@
-from DAQ.traill_visualizer import TRAiLLVisualizer
+from traill_daq import TRAiLLVisualizer
 import argparse
 
 if __name__ == '__main__':
