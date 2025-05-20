@@ -17,7 +17,7 @@ import numpy as np
 from scipy.ndimage import zoom
 from cmap import Colormap
 
-from benchmark import traill_benchmark
+from traill_daq.benchmark import traill_benchmark
 
 mpl.rcParams['font.family'] = 'arial'
 mpl.rcParams['font.size'] = 14
