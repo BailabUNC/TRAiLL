@@ -12,7 +12,7 @@ from torch.utils.data import ConcatDataset
 
 from traill.traill_dataset import TRAiLLDataset
 
-def generate_pattern(person: str, pattern_type: str) -> str:
+def generate_pattern(person: str, pattern_type: str, group: int = None) -> str:
     """
     Generate regex patterns for matching specific filename formats.
     
@@ -32,8 +32,10 @@ def generate_pattern(person: str, pattern_type: str) -> str:
     person_escaped = re.escape(person)
     # Base pattern for both types
     base = f'dataset-{person_escaped}-'
-    
-    group_suffix = r'(?:-group_\d+)?'
+
+    # If group is specified, append it to the base pattern
+    if group is not None:
+        group_suffix = f'-group_{group}'
 
     patterns = {
         'letters': base + r'(?P<letter>[A-Za-z])' + group_suffix + r'\.pt$',
@@ -94,7 +96,7 @@ if __name__ == '__main__':
     parser.add_argument('--data-dir', type=str, default='data/.processed', help='Directory containing dataset files.')
     args = parser.parse_args()
 
-    pattern = generate_pattern(args.person, args.pattern_name)
+    pattern = generate_pattern(args.person, args.pattern_name, args.group)
     datasets = load_datasets(args.data_dir, pattern)
     features, labels = generate_tensor(datasets)
 
