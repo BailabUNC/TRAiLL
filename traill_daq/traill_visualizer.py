@@ -3,6 +3,7 @@ import time
 import datetime
 import argparse
 import logging
+import json
 from functools import partial
 from multiprocessing import Queue, Process, Event, Manager
 from multiprocessing.managers import Namespace
@@ -30,7 +31,9 @@ class TRAiLLVisualizer:
                  data_folder=None, 
                  timeout=0.5,
                  action_duration=200,
-                 disable_csv=False):
+                 disable_csv=False,
+                 profile_name=None,
+                 profile_json_path='activity_profiles.json'):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
         self.data_folder = data_folder
@@ -46,11 +49,29 @@ class TRAiLLVisualizer:
         self.fig, self.ax = None, None
         self.terminate_loop_evt = Event()
         self.shared_status = None
-        
+
+        # Always resolve the JSON path relative to this script's directory
+        self.profile_name = profile_name
+        self.profile_json_path = os.path.join(os.path.dirname(__file__), profile_json_path)
+
         if self.data_folder is None:
             self.data_folder = 'raw_data'
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
+
+        # Load activities from the shared JSON file if profile_name is provided
+        if self.profile_name is not None and os.path.exists(self.profile_json_path):
+            with open(self.profile_json_path, 'r') as f:
+                profiles = json.load(f)
+            if self.profile_name in profiles:
+                acts = profiles[self.profile_name].get('activities', [])
+                # Ensure "open" is always the first/default status
+                self.activities = ['open'] + [a for a in acts if a != 'open']
+                logging.info(f'Loaded activities for profile "{self.profile_name}": {self.activities}')
+            else:
+                self.activities = ['open']
+        else:
+            self.activities = ['open']  # fallback if no profile
 
     def connect(self):
         try:
@@ -230,16 +251,17 @@ class TRAiLLVisualizer:
         terminate_button.on_clicked(self.terminate)
 
         # Create status buttons for the activities.
-        import string
-
-        self.activities = ["open"] + list(string.ascii_lowercase) + ["thumb", "index", "middle", "ring", "pinky"]
-    
+        num_activities = len(self.activities)
         panel_width = 0.25
+        panel_height = min(0.8, 0.03 * num_activities)
         ax_radio = plt.axes([ax_pos.x0 + ax_pos.width + 0.01,
                              ax_pos.y0,
                              panel_width,
-                             ax_pos.height])
+                             panel_height])
         self.radio = RadioButtons(ax_radio, self.activities, active=0)
+        # Optionally adjust font size for many activities
+        for text in self.radio.labels:
+            text.set_fontsize(max(8, 16 - num_activities // 2))
         self.radio.on_clicked(self.update_status)
 
         anim = FuncAnimation(self.fig, self.update_img, interval=10,
