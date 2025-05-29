@@ -30,7 +30,7 @@ class TRAiLLVisualizer:
                  baud_rate=115200,
                  data_folder=None, 
                  timeout=0.5,
-                 action_duration=200,
+                 action_duration=150,
                  disable_csv=False,
                  profile_name=None,
                  profile_json_path='activity_profiles.json'):
@@ -273,7 +273,7 @@ class TRAiLLVisualizer:
         self.terminate_loop_evt.set()
         if hasattr(self, 'serial_process') and self.serial_process.is_alive():
             self.serial_process.join()
-        if hasattr(self, 'saving_process') and self.saving_process is not None and self.saving_process.is_alive():
+        if hasattr(self, 'saving_process') and self.saving_process.is_alive():
             self.saving_process.terminate()
         plt.close(self.fig)
         logging.info('Test terminated by user.')
@@ -300,8 +300,6 @@ class TRAiLLVisualizer:
                 )
             )
             self.saving_process.start()
-        else:
-            self.saving_process = None
 
         # main process
         self._visualization_process()
