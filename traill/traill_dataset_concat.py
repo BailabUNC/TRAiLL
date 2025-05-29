@@ -36,10 +36,13 @@ def generate_pattern(person: str, pattern_type: str, group: int = None) -> str:
     # If group is specified, append it to the base pattern
     if group is not None:
         group_suffix = f'-group_{group}'
+    else:
+        group_suffix = ''
 
     patterns = {
         'letters': base + r'(?P<letter>[A-Za-z])' + group_suffix + r'\.pt$',
         'commands': base + r'(?P<command>open|fist|point|pinch|wave|trigger|grab|thumbs_up|swipe)' + group_suffix + r'\.pt$',
+        'fingers': base + r'(?P<finger>index|middle|ring|pinky|thumb)' + group_suffix + r'\.pt$',
         'augmented': base + r'(?P<letter>[A-Za-z])_(?=.*(offset|rotate)).*' + group_suffix + r'\.pt$',
     }
     
