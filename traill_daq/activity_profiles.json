@@ -1,5 +1,14 @@
 {
-  "letters": { "activities": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"] },
-  "fingers": { "activities": ["thumb", "index", "middle", "ring", "pinky"] },
-  "picks": { "activities": ["1", "2", "3", "4", "5", "6"] }
+  "letters": { 
+    "activities": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"],
+    "action_duration": 150
+  },
+  "fingers": { 
+    "activities": ["thumb", "index", "middle", "ring", "pinky"],
+    "action_duration": 200
+  },
+  "picks": { 
+    "activities": ["1", "2", "3", "4", "5", "6"],
+    "action_duration": 150
+  }
 }
