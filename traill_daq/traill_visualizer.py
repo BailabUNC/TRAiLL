@@ -30,7 +30,7 @@ class TRAiLLVisualizer:
                  baud_rate=115200,
                  data_folder=None, 
                  timeout=0.5,
-                 action_duration=150,
+                 action_duration=None,  # changed default to None
                  disable_csv=False,
                  profile_name=None,
                  profile_json_path='activity_profiles.json'):
@@ -38,7 +38,6 @@ class TRAiLLVisualizer:
         self.baud_rate = baud_rate
         self.data_folder = data_folder
         self.timeout = timeout
-        self.action_duration = action_duration
 
         self.vis_queue = Queue()
         self.saving_queue = Queue()
@@ -59,19 +58,29 @@ class TRAiLLVisualizer:
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
 
-        # Load activities from the shared JSON file if profile_name is provided
+        # Load activities and action_duration from the shared JSON file if profile_name is provided
+        self.action_duration = 150  # default fallback
         if self.profile_name is not None and os.path.exists(self.profile_json_path):
             with open(self.profile_json_path, 'r') as f:
                 profiles = json.load(f)
             if self.profile_name in profiles:
-                acts = profiles[self.profile_name].get('activities', [])
+                profile = profiles[self.profile_name]
+                acts = profile.get('activities', [])
                 # Ensure "open" is always the first/default status
                 self.activities = ['open'] + [a for a in acts if a != 'open']
+                # Load action_duration from profile if present
+                if 'action_duration' in profile:
+                    self.action_duration = profile['action_duration']
+                elif action_duration is not None:
+                    self.action_duration = action_duration
                 logging.info(f'Loaded activities for profile "{self.profile_name}": {self.activities}')
+                logging.info(f'Action duration for profile "{self.profile_name}": {self.action_duration}')
             else:
                 self.activities = ['open']
         else:
             self.activities = ['open']  # fallback if no profile
+            if action_duration is not None:
+                self.action_duration = action_duration
 
     def connect(self):
         try:
