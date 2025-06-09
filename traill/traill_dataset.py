@@ -23,6 +23,7 @@ class TRAiLLDataset(Dataset):
                  filter_order=3,
                  filter_cutoff=[0.2, 30],
                  fs=100,
+                 apply_filter=True, # New parameter
                  transform=None):
         """
         Args:
@@ -31,9 +32,11 @@ class TRAiLLDataset(Dataset):
             onset_threshold_factor (float): Fraction of max derivative norm used to detect the gesture onset.
             min_instance_length (int): Minimum number of rows for an instance to be considered.
             pre_trigger_points (int): Number of points to trace back before the detected onset.
+            post_trigger_points (int): Number of points to trace back after the gesture.
             filter_order (int): Order of the Butterworth filter.
             filter_cutoff (list): Cutoff frequency (Hz) for the Butterworth filter.
             fs (float): Sampling frequency (Hz) of the data.
+            apply_filter (bool): Whether to apply Butterworth filter to the feature data. Filtered data is always used for indexing.
             transform (callable, optional): Optional transform to be applied on a sample.
         """
         self.csv_path = csv_path
@@ -45,6 +48,7 @@ class TRAiLLDataset(Dataset):
         self.filter_order = filter_order
         self.filter_cutoff = filter_cutoff
         self.fs = fs
+        self.apply_filter = apply_filter # Store the new parameter
         self.transform = transform
 
         # Define a mapping for gesture labels
@@ -71,36 +75,67 @@ class TRAiLLDataset(Dataset):
         df.sort_values(by='timestamp', inplace=True)
 
         sensor_columns = df.columns[2:]
-        raw_sensor_data = df[sensor_columns].values.astype(np.float32)
-        filtered_sensor_data = self._apply_butterworth(raw_sensor_data)
-        df[sensor_columns] = filtered_sensor_data
+        raw_sensor_data_matrix = df[sensor_columns].values.astype(np.float32)
+        
+        # Filtered data is always created for indexing logic (onset, trim)
+        filtered_sensor_data_matrix_for_indexing = self._apply_butterworth(raw_sensor_data_matrix.copy())
 
+        # groups are based on the original df's status column
         groups = list(df.groupby(df['status'].ne(df['status'].shift()).cumsum()))
         instances = []
 
-        for idx, (group_id, group) in enumerate(groups):
-            label = group['status'].iloc[0]
-            if label == 'open' or len(group) < self.min_instance_length:
+        for idx, (group_id, group_df) in enumerate(groups):
+            label = group_df['status'].iloc[0]
+            if label == 'open' or len(group_df) < self.min_instance_length:
                 continue
-            sensor_data = group.iloc[:, 2:].values.astype(np.float32)
+            
+            current_group_indices = group_df.index
 
-            # Check if there is a preceding group that is 'open'
-            preceding_data = None
+            # Data for indexing logic (always filtered)
+            active_data_for_indexing = filtered_sensor_data_matrix_for_indexing[current_group_indices]
+            # Raw data (potentially for features)
+            active_data_for_features_raw = raw_sensor_data_matrix[current_group_indices]
+
+            preceding_data_for_indexing, preceding_data_for_features_raw = None, None
             if idx > 0:
-                prev_label = groups[idx - 1][1]['status'].iloc[0]
-                if prev_label == 'open':
-                    preceding_data = groups[idx - 1][1].iloc[:, 2:].values.astype(np.float32)
-
-            following_data = None
+                prev_group_df = groups[idx - 1][1]
+                if prev_group_df['status'].iloc[0] == 'open':
+                    prev_group_indices = prev_group_df.index
+                    preceding_data_for_indexing = filtered_sensor_data_matrix_for_indexing[prev_group_indices]
+                    preceding_data_for_features_raw = raw_sensor_data_matrix[prev_group_indices]
+            
+            following_data_for_indexing, following_data_for_features_raw = None, None
             if idx + 1 < len(groups) and groups[idx + 1][1]['status'].iloc[0] == 'open':
-                following_data = groups[idx + 1][1].iloc[:, 2:].values.astype(np.float32)
+                following_group_df = groups[idx + 1][1]
+                following_group_indices = following_group_df.index
+                following_data_for_indexing = filtered_sensor_data_matrix_for_indexing[following_group_indices]
+                following_data_for_features_raw = raw_sensor_data_matrix[following_group_indices]
 
-            aligned_data, trigger_offset = self._align_onset(sensor_data, preceding_data, following_data)
+            # Align onset using filtered data for logic, and apply same slicing to raw data
+            aligned_data_filt, trigger_offset, aligned_data_raw_maybe = self._align_onset(
+                active_data_for_indexing, preceding_data_for_indexing, following_data_for_indexing,
+                active_data_alt=active_data_for_features_raw,
+                preceding_data_alt=preceding_data_for_features_raw,
+                following_data_alt=following_data_for_features_raw
+            )
 
-            trimmed_data = self._trim_tail(aligned_data)
+            # Trim tail using filtered data for logic, and apply same slicing to raw data
+            trimmed_data_filt, trimmed_data_raw_maybe = self._trim_tail(
+                aligned_data_filt,
+                signal_alt=aligned_data_raw_maybe
+            )
 
-            # Resample and normalize the trimmed data.
-            sensor_data_resampled, scaled_trigger = self._resample_signal(trimmed_data, trigger_offset)
+            # Select data for features based on the flag
+            if self.apply_filter:
+                final_data_for_features = trimmed_data_filt
+            else:
+                final_data_for_features = trimmed_data_raw_maybe
+                if final_data_for_features is None: # Should not happen if raw inputs were provided
+                    final_data_for_features = trimmed_data_filt
+
+
+            # Resample and normalize the selected data.
+            sensor_data_resampled, scaled_trigger = self._resample_signal(final_data_for_features, trigger_offset)
             sensor_data_normalized = self._normalize_signal(sensor_data_resampled)
 
             instances.append({
@@ -120,79 +155,148 @@ class TRAiLLDataset(Dataset):
         filtered_data = sosfiltfilt(sos, sensor_data, axis=0, padlen=self.target_length // 2)
         return filtered_data
 
-    def _align_onset(self, active_data, preceding_data, following_data):
+    def _align_onset(self, active_data, preceding_data, following_data,
+                     active_data_alt=None, preceding_data_alt=None, following_data_alt=None):
         """
-        Detect the gesture onset using only the active_data.
+        Detect the gesture onset using only the active_data (primary, filtered).
         Then, if preceding_data is provided and the active onset occurs within 
         pre_trigger_points, prepend just enough rows from preceding_data so that
         the effective segment includes the desired pre-trigger window.
+        Applies identical slicing/concatenation to _alt data if provided.
         
         Returns:
             concatenated_data: Active data with the necessary pre-trigger rows (if any).
             trigger_offset: The index in the concatenated data corresponding to the onset.
+            concatenated_data_alt: Alternative data processed identically, or None.
         """
         # Compute onset index in active_data.
         diff_norm = np.linalg.norm(np.diff(active_data, axis=0), axis=1)
-        threshold = self.onset_threshold_factor * np.max(diff_norm)
+        threshold = self.onset_threshold_factor * np.max(diff_norm) if diff_norm.size > 0 else 0
         onset_indices = np.where(diff_norm > threshold)[0]
         onset_index_active = int(onset_indices[0]) if onset_indices.size > 0 else 0
         
-        # If we have preceding_data, handle both cases
+        concatenated_data = None
+        concatenated_data_alt = None
+        trigger_offset = 0
+
+        # Helper to apply slices and concatenate
+        def _apply_slicing_and_concat(main_pre, main_active, main_fol,
+                                      alt_pre, alt_active, alt_fol,
+                                      pre_slice, active_slice, fol_slice):
+            parts_main = []
+            parts_alt = []
+            
+            if pre_slice and main_pre is not None:
+                parts_main.append(main_pre[pre_slice])
+                if alt_pre is not None: parts_alt.append(alt_pre[pre_slice])
+            
+            parts_main.append(main_active[active_slice])
+            if alt_active is not None: parts_alt.append(alt_active[active_slice])
+
+            if fol_slice and main_fol is not None:
+                parts_main.append(main_fol[fol_slice])
+                if alt_fol is not None: parts_alt.append(alt_fol[fol_slice])
+            
+            concat_main = np.concatenate(parts_main, axis=0) if parts_main else np.array([]).reshape(0, main_active.shape[1] if main_active.ndim > 1 and main_active.shape[1] > 0 else 0)
+
+            concat_alt = None
+            if alt_active is not None: # If primary alt data is present, attempt concatenation
+                # Ensure alt_parts only contains non-None elements if their main counterparts were added
+                valid_alt_parts = []
+                if pre_slice and main_pre is not None and alt_pre is not None: valid_alt_parts.append(alt_pre[pre_slice])
+                valid_alt_parts.append(alt_active[active_slice])
+                if fol_slice and main_fol is not None and alt_fol is not None: valid_alt_parts.append(alt_fol[fol_slice])
+
+                if valid_alt_parts:
+                    concat_alt = np.concatenate(valid_alt_parts, axis=0)
+                elif alt_active is not None: # Handle case where only active_alt is present
+                     concat_alt = alt_active[active_slice]
+
+
+            return concat_main, concat_alt
+
         if preceding_data is not None:
-            # Determine how many pre-trigger points we need from the active group.
             extra_needed = self.pre_trigger_points - onset_index_active
             if extra_needed > 0:
-                # Use as many rows as available from preceding_data (up to extra_needed)
                 num_rows_preceding = preceding_data.shape[0]
-                rows_to_prepend = preceding_data[max(0, num_rows_preceding - extra_needed):]
-                concatenated_data = np.concatenate((rows_to_prepend, active_data), axis=0)
-                trigger_offset = rows_to_prepend.shape[0] + onset_index_active
-            else:
-                num_rows_to_trim = -extra_needed
-                trimmed_data = active_data[num_rows_to_trim:]
+                num_to_prepend = min(extra_needed, num_rows_preceding)
+                
+                pre_s = slice(num_rows_preceding - num_to_prepend, None) if num_to_prepend > 0 else None
+                active_s = slice(None) # Full active data
+
+                concatenated_data, concatenated_data_alt = _apply_slicing_and_concat(
+                    preceding_data, active_data, None,
+                    preceding_data_alt, active_data_alt, None,
+                    pre_s, active_s, None
+                )
+                trigger_offset = num_to_prepend + onset_index_active
+            else: # extra_needed <= 0
+                num_rows_to_trim_active_start = -extra_needed
+                
+                active_s = slice(num_rows_to_trim_active_start, None)
+                fol_s = None
+                
+                if following_data is not None and num_rows_to_trim_active_start > 0:
+                    num_to_append_following = min(num_rows_to_trim_active_start, following_data.shape[0])
+                    fol_s = slice(0, num_to_append_following) if num_to_append_following > 0 else None
+
+                concatenated_data, concatenated_data_alt = _apply_slicing_and_concat(
+                    None, active_data, following_data,
+                    None, active_data_alt, following_data_alt,
+                    None, active_s, fol_s
+                )
                 trigger_offset = self.pre_trigger_points
-                if following_data is not None and num_rows_to_trim > 0:
-                    # If we have following_data, append it to the trimmed data.
-                    rows_to_append = following_data[:num_rows_to_trim]
-                    concatenated_data = np.concatenate((trimmed_data, rows_to_append), axis=0)
-                else:
-                    concatenated_data = trimmed_data
-            return concatenated_data, trigger_offset
-        else:
-            # Without preceding data, simply trace back within active_data.
+        else: # No preceding data
             effective_start = max(0, onset_index_active - self.pre_trigger_points)
+            active_s = slice(effective_start, None)
+            
+            concatenated_data, concatenated_data_alt = _apply_slicing_and_concat(
+                None, active_data, None,
+                None, active_data_alt, None,
+                None, active_s, None
+            )
             trigger_offset = onset_index_active - effective_start
-            trimmed_data = active_data[effective_start:]
-            return trimmed_data, trigger_offset
+            
+        return concatenated_data, trigger_offset, concatenated_data_alt
         
-    def _trim_tail(self, signal):
+    def _trim_tail(self, signal, signal_alt=None):
         """
         Trim off any trailing "rest" after the gesture.
         Uses only past data (no peeking ahead), by finding
         the last index where the derivative norm exceeds 
         `onset_threshold_facter * max_derivative`.
+        Applies identical trimming to signal_alt if provided.
         """
         signal_length = signal.shape[0]
 
-        # if very short, nothing to trim
         if signal_length < 2:
-            return signal
+            return signal, signal_alt
         
-        # compute frame-to-frame movement magnitude
         diff_norm = np.linalg.norm(np.diff(signal, axis=0), axis=1)
+        if diff_norm.size == 0: # Should not happen if signal_length >= 2
+             return signal, signal_alt
+
         threshold = self.onset_threshold_factor * np.max(diff_norm)
-
-        # find all frames above threshold
         idxs = np.where(diff_norm > threshold)[0]
+
         if idxs.size == 0:
-            # never moved -> keep entire signal
-            return signal
+            return signal, signal_alt
 
-        # last "active" frame is idx + 1 (because diff_norm is between frames)
         last_active = idxs[-1] + 1
-
         end_idx = min(last_active + self.post_trigger_points, signal_length)
-        return signal[:end_idx]
+        
+        trimmed_signal = signal[:end_idx]
+        trimmed_signal_alt = None
+        if signal_alt is not None:
+            # Ensure signal_alt is at least as long as the portion of signal we're keeping
+            # or can be sliced up to its own length if shorter.
+            alt_end_idx = min(end_idx, signal_alt.shape[0])
+            trimmed_signal_alt = signal_alt[:alt_end_idx]
+            # If signal_alt was shorter than signal, and end_idx was beyond signal_alt's length,
+            # this correctly takes up to signal_alt's end.
+            # If signal_alt was longer, it's trimmed like signal.
+
+        return trimmed_signal, trimmed_signal_alt
 
     def _resample_signal(self, signal, trigger_offset):
         """
@@ -274,6 +378,8 @@ if __name__ == '__main__':
                         help='Fraction of max derivative norm used to detect the gesture onset.')
     parser.add_argument('--pre-trigger-points', default=15, type=int,
                         help='Number of points to trace back before the detected onset.')
+    parser.add_argument('--disable-filter', action='store_false', dest='apply_filter',
+                        help='If set, do not apply Butterworth filter to feature data (filtered data still used for indexing).')
     parser.add_argument('--batch', action='store_true',
                         help='If set, treat test_path as a folder and process all CSV files in it.')
     parser.add_argument('--no-plot', action='store_true',
@@ -301,10 +407,15 @@ if __name__ == '__main__':
 
         print(f'Processing {csv}...')
         # Load, process, and save the dataset
-        dataset = TRAiLLDataset(csv, target_length=args.target_length, onset_threshold_factor=args.onset_threshold, pre_trigger_points=args.pre_trigger_points)       # Skip saving if --no-save is set
+        dataset = TRAiLLDataset(csv, target_length=args.target_length, 
+                                onset_threshold_factor=args.onset_threshold, 
+                                pre_trigger_points=args.pre_trigger_points,
+                                apply_filter=args.apply_filter) # Pass the new argument
+        # Skip saving if --no-save is set
         if not args.no_save:
             group_str = f'-group_{args.group}' if args.group else ''
-            out_path = os.path.join('data', '.processed', f'dataset-{args.person}-{csv_path_no_text.split('\\')[-1]}{group_str}.pt')
+            filter_str = '' if args.apply_filter else '-no_filter'
+            out_path = os.path.join('data', '.processed', f'dataset-{args.person}-{csv_path_no_text.split("\\")[-1]}{group_str}{filter_str}.pt')
             os.makedirs(os.path.join('data', '.processed'), exist_ok=True)
             print(f'Saving dataset to {out_path}...')
             torch.save(dataset, out_path)
