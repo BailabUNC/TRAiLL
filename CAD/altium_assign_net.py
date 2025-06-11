@@ -1,10 +1,17 @@
 import pyautogui
 import time
 from pynput import keyboard
+import argparse
 
 # Flag to control the main loop
 running = True
-TARGET_X, TARGET_Y = 3790, 444
+# Default target coordinates (e.g., for 4K screen)
+DEFAULT_TARGET_X, DEFAULT_TARGET_Y = 3790, 444
+# Target coordinates for 2K screen
+TARGET_2K_X, TARGET_2K_Y = 2526, 449
+
+# Global variables for target coordinates, to be set based on args
+TARGET_X, TARGET_Y = DEFAULT_TARGET_X, DEFAULT_TARGET_Y
 
 def perform_click_action():
     """Moves to target, clicks, and returns to original position."""
@@ -40,13 +47,27 @@ def on_press(key):
             print("\nAlt key pressed.")
             perform_click_action()
 
-print(f"Script running. Press 'Alt' to move to ({TARGET_X}, {TARGET_Y}), click, and return. Press 'q' to quit.")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Automate mouse clicks for different screen resolutions.")
+    parser.add_argument('--screen', type=str, default='4k', choices=['4k', '2k'],
+                        help="Specify screen resolution: '4k' (default) or '2k'.")
+    args = parser.parse_args()
 
-# Set up keyboard listener
-listener = keyboard.Listener(on_press=on_press)
-listener.start()
+    if args.screen == '2k':
+        TARGET_X, TARGET_Y = TARGET_2K_X, TARGET_2K_Y
+        print("Using 2K screen target coordinates.")
+    else:
+        # TARGET_X, TARGET_Y are already set to default (4k)
+        print("Using 4K screen target coordinates (default).")
 
-# Keep the script running until 'q' is pressed or listener stops
-listener.join()
 
-print("Script terminated.")
+    print(f"Script running. Press 'Alt' to move to ({TARGET_X}, {TARGET_Y}), click, and return. Press 'q' to quit.")
+
+    # Set up keyboard listener
+    listener = keyboard.Listener(on_press=on_press)
+    listener.start()
+
+    # Keep the script running until 'q' is pressed or listener stops
+    listener.join()
+
+    print("Script terminated.")
