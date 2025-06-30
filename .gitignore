@@ -8,8 +8,13 @@ data/.augmented/
 *_MACOSX*
 *.DS_Store
 
-# Figures
+# Figures and videos projects
 *.ai
+*.prproj
+*.prin
 
 # Jupyter Notebook
 *.ipynb
+
+# Plyground
+playground/*.py
