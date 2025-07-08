@@ -57,6 +57,7 @@ target_include_directories(TRAiLL_DAQ_Pico PRIVATE
 target_link_libraries(TRAiLL_DAQ_Pico 
         hardware_timer
         hardware_adc
+        hardware_pwm
         )
 
 pico_add_extra_outputs(TRAiLL_DAQ_Pico)
