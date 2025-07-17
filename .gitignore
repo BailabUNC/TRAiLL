@@ -9,6 +9,7 @@ data/.augmented/
 *.DS_Store
 
 # Figures and videos projects
+figures/
 *.ai
 *.prproj
 *.prin
