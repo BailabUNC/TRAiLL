@@ -1,10 +1,9 @@
 import os
 import time
 import datetime
-import argparse
 import logging
 import json
-from functools import partial
+from threading import Thread
 from multiprocessing import Queue, Process, Event, Manager
 from multiprocessing.managers import Namespace
 from multiprocessing.synchronize import Event as SyncEvent
@@ -33,7 +32,9 @@ class TRAiLLVisualizer:
                  action_duration=None,  # changed default to None
                  disable_csv=False,
                  profile_name=None,
-                 profile_json_path='activity_profiles.json'):
+                 profile_json_path='activity_profiles.json',
+                 paper_tape_name=None,
+                 paper_tape_json_path='paper_tapes.json'):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
         self.data_folder = data_folder
@@ -49,9 +50,11 @@ class TRAiLLVisualizer:
         self.terminate_loop_evt = Event()
         self.shared_status = None
 
-        # Always resolve the JSON path relative to this script's directory
+        # Always resolve the JSON paths relative to this script's directory
         self.profile_name = profile_name
         self.profile_json_path = os.path.join(os.path.dirname(__file__), profile_json_path)
+        self.paper_tape_name = paper_tape_name
+        self.paper_tape_json_path = os.path.join(os.path.dirname(__file__), paper_tape_json_path)
 
         if self.data_folder is None:
             self.data_folder = 'raw_data'
@@ -81,6 +84,31 @@ class TRAiLLVisualizer:
             self.activities = ['open']  # fallback if no profile
             if action_duration is not None:
                 self.action_duration = action_duration
+        # Load paper tape sequence if provided
+        self.tape_activities = None
+        if self.paper_tape_name is not None and os.path.exists(self.paper_tape_json_path):
+            try:
+                with open(self.paper_tape_json_path, 'r') as f:
+                    tapes = json.load(f)
+                tape = tapes.get(self.paper_tape_name, None)
+                if tape:
+                    acts = tape.get('activities', [])
+                    durs = tape.get('durations', [])
+                    interval = tape.get('interval', 0)
+                    if len(acts) == len(durs):
+                        self.tape_activities = acts
+                        self.tape_durations = durs
+                        self.tape_interval = interval
+                        logging.info(f'Loaded paper tape "{self.paper_tape_name}": {acts} with durations {durs} and interval {interval}')
+                    else:
+                        logging.error('Paper tape activities and durations length mismatch, disabling paper tape.')
+                        self.paper_tape_name = None
+                else:
+                    logging.error(f'Paper tape "{self.paper_tape_name}" not found, disabling paper tape.')
+                    self.paper_tape_name = None
+            except Exception as e:
+                logging.error(f'Error loading paper tape: {e}')
+                self.paper_tape_name = None
 
     def connect(self):
         try:
@@ -248,7 +276,7 @@ class TRAiLLVisualizer:
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         plt.subplots_adjust(left=-0.12, bottom=0.2)
         plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-180, vmax=180)
+        self.img = self.ax.imshow(np.zeros((6, 8)), cmap=Colormap('cmocean:balance').to_mpl(), vmin=-2000, vmax=2000)
         
         ax_pos = self.ax.get_position()   # [x0, y0, width, height]
         button_height = 0.075
@@ -276,6 +304,24 @@ class TRAiLLVisualizer:
         anim = FuncAnimation(self.fig, self.update_img, interval=10,
                              cache_frame_data=False, blit=False)
         plt.show()
+
+    def _paper_tape_loop(self):
+        """
+        Automate status changes based on paper tape sequence
+        """
+        sample_interval = getattr(self, 'visualization_interval', 0.01)
+        for act, dur in zip(self.tape_activities, self.tape_durations):
+            if self.terminate_loop_evt.is_set():
+                break
+            self.shared_status.status = act
+            logging.info(f'Paper tape setting status: {act}')
+            time.sleep(dur * sample_interval)
+            if self.terminate_loop_evt.is_set():
+                break
+            self.shared_status.status = 'open'
+            logging.info('Paper tape setting status: open')
+            time.sleep(self.tape_interval * sample_interval)
+        logging.info('Completed paper tape sequence.')
 
     def terminate(self, event):
         logging.info('Termination request by user.')
@@ -310,5 +356,11 @@ class TRAiLLVisualizer:
             )
             self.saving_process.start()
 
-        # main process
+        # start paper tape automation if configured
+        if self.paper_tape_name and self.tape_activities:
+            # interval between frames in seconds (FuncAnimation interval=10ms)
+            self.visualization_interval = 0.01
+            self.tape_thread = Thread(target=self._paper_tape_loop, daemon=True)
+            self.tape_thread.start()
+        # main visualization process
         self._visualization_process()
