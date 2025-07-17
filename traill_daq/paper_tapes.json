@@ -1,0 +1,41 @@
+{
+    "exercise_test": {
+        "activities": [
+            "active", "active", "active", "active", "active"
+        ],
+        "durations": [
+            250, 250, 250, 250, 250
+        ],
+        "interval": 250
+    },
+
+    "vr_command_test": {
+        "activities": [
+            "thumb", "index", "middle", "ring", "pinky",
+            "thumb", "index", "middle", "ring", "pinky",
+            "thumb", "index", "middle", "ring", "pinky"
+        ],
+        "durations": [
+            200, 200, 200, 200, 200,
+            200, 200, 200, 200, 200,
+            200, 200, 200, 200, 200
+        ],
+        "interval": 100
+    },
+
+    "guitar_test": {
+        "activities": [
+            "E2", "G3", "B3", "E4",
+            "E2", "G3", "B3", "E4",
+            "E2", "G3", "B3", "E4",
+            "E2", "G3", "B3", "E4"
+        ],
+        "durations": [
+            150, 150, 150, 150,
+            150, 150, 150, 150,
+            150, 150, 150, 150,
+            150, 150, 150, 150
+        ],
+        "interval": 100
+    }
+}
