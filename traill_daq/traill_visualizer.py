@@ -34,7 +34,8 @@ class TRAiLLVisualizer:
                  profile_name=None,
                  profile_json_path='activity_profiles.json',
                  paper_tape_name=None,
-                 paper_tape_json_path='paper_tapes.json'):
+                 paper_tape_json_path='paper_tapes.json',
+                 start_delay=0):
         self.serial_port = serial_port
         self.baud_rate = baud_rate
         self.data_folder = data_folder
@@ -55,6 +56,7 @@ class TRAiLLVisualizer:
         self.profile_json_path = os.path.join(os.path.dirname(__file__), profile_json_path)
         self.paper_tape_name = paper_tape_name
         self.paper_tape_json_path = os.path.join(os.path.dirname(__file__), paper_tape_json_path)
+        self.start_delay = start_delay
 
         if self.data_folder is None:
             self.data_folder = 'raw_data'
@@ -95,11 +97,12 @@ class TRAiLLVisualizer:
                     acts = tape.get('activities', [])
                     durs = tape.get('durations', [])
                     interval = tape.get('interval', 0)
+                    self.start_delay = tape.get('start_delay', self.start_delay)
                     if len(acts) == len(durs):
                         self.tape_activities = acts
                         self.tape_durations = durs
                         self.tape_interval = interval
-                        logging.info(f'Loaded paper tape "{self.paper_tape_name}": {acts} with durations {durs} and interval {interval}')
+                        logging.info(f'Loaded paper tape "{self.paper_tape_name}": {acts} with durations {durs}, interval {interval}, and start_delay {self.start_delay}')
                     else:
                         logging.error('Paper tape activities and durations length mismatch, disabling paper tape.')
                         self.paper_tape_name = None
@@ -310,6 +313,13 @@ class TRAiLLVisualizer:
         Automate status changes based on paper tape sequence
         """
         sample_interval = getattr(self, 'visualization_interval', 0.01)
+        
+        # Start with an "open" period if start_delay is defined
+        if self.start_delay > 0:
+            self.shared_status.status = 'open'
+            logging.info(f'Paper tape starting with "open" for {self.start_delay} samples.')
+            time.sleep(self.start_delay * sample_interval)
+
         for act, dur in zip(self.tape_activities, self.tape_durations):
             if self.terminate_loop_evt.is_set():
                 break
