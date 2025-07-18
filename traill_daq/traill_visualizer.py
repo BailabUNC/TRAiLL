@@ -216,7 +216,8 @@ class TRAiLLVisualizer:
                         filepath: str,
                         terminate_loop_evt: SyncEvent,
                         shared_status: Namespace,
-                        action_duration: int):
+                        action_duration: int,
+                        paper_tape_mode: bool = False):
         """
         Stand-alone process for saving data to disk.
         Opens the file once and continuously drains the saving queue, writing each
@@ -250,7 +251,7 @@ class TRAiLLVisualizer:
                         points_count = 0
 
                     # If the current action has reached its pre-defined duration, reset to 'open'
-                    if current_action != 'open' and points_count >= action_duration:
+                    if not paper_tape_mode and current_action != 'open' and points_count >= action_duration:
                         shared_status.status = 'open'
                         current_action= 'open'
                         points_count = 0
@@ -353,6 +354,7 @@ class TRAiLLVisualizer:
         self.serial_process = Process(target=self._serial_process)
         self.serial_process.start()
 
+        paper_tape_mode = bool(self.paper_tape_name and self.tape_activities)
         if not self.disable_csv:
             self.saving_process = Process(
                 target=self._saving_process,
@@ -362,12 +364,13 @@ class TRAiLLVisualizer:
                     self.terminate_loop_evt,
                     self.shared_status,
                     self.action_duration,
+                    paper_tape_mode,
                 )
             )
             self.saving_process.start()
 
         # start paper tape automation if configured
-        if self.paper_tape_name and self.tape_activities:
+        if paper_tape_mode:
             # interval between frames in seconds (FuncAnimation interval=10ms)
             self.visualization_interval = 0.01
             self.tape_thread = Thread(target=self._paper_tape_loop, daemon=True)
