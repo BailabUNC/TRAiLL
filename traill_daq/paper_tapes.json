@@ -12,17 +12,16 @@
 
     "vr_command_test": {
         "activities": [
-            "zoom_in","zoom_out", "double_tap","mouse_edit","pointer_tap",
-            "pointer_tap","single_tap","swipe_right","double_tap","mouse_edit",
-            "single_tap","swipe_left","single_tap"
+            "zoom_in","zoom_out", "double_tap","pointer_tap",
+            "pointer_tap","fist","swipe_left",
+            "fist"
         ],
         "durations": [
-            200, 200, 200, 400, 200,          
-            200, 200, 200, 100,700,
-            200,200,200
+            200, 200, 100, 100, 100,          
+            100, 100, 100
         ],
-        "start_delay": 400,
-        "interval": 200
+        "start_delay": 1000,
+        "interval": 300
     },
 
     "guitar_test": {
