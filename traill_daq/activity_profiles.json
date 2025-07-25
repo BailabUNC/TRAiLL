@@ -32,7 +32,7 @@
     "action_duration": 6000
   },
   "vr_test": {
-    "activities": ["zoom_in","zoom_out","pointer_tap","double_tap","single_tap","swipe_right","swipe_left","mouse_edit"],
+    "activities": ["zoom_in","zoom_out","pointer_tap","fist","swipe_left"],
     "action_duration": 200
   }
 }
