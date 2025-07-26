@@ -1,6 +1,7 @@
 .venv/
 .vscode/
 __pycache__/
+.idea/
 
 raw_data/*.csv
 data/.augmented/
