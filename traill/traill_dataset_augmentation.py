@@ -26,14 +26,15 @@ def array2vec(x: torch.Tensor):
     """[T, 1, H, W] -> [T, C]"""
     return x.view(x.size(0), -1)
 
-def rand_affine(angle: float, shift: float, upsample: int) -> torch.Tensor:
+def rand_affine(angle: float, shift: float, upsample: int) -> Tuple[torch.Tensor, float, float, float]:
     """
     Random 2-D rotation (±angle) + translation (±shift) matrix.
     Returned shape = [1, 2, 3] ready for `affine_grid`.
     **Coordinates are normalized to [-1, 1]**.
     """
     # random rotation in degrees
-    rot = np.deg2rad(random.uniform(-angle, angle))
+    rot_deg = random.uniform(-angle, angle)
+    rot = np.deg2rad(rot_deg)
     c, s = np.cos(rot), np.sin(rot)
 
     # translate in high-res pixels
@@ -49,50 +50,7 @@ def rand_affine(angle: float, shift: float, upsample: int) -> torch.Tensor:
          [s,  c, ty]],
         dtype=np.float32,
     )  # [2, 3]
-    return torch.from_numpy(theta).unsqueeze(0)  # [1, 2, 3]
-
-def augment_frame(
-    frame: torch.Tensor,
-    theta: torch.Tensor,
-    upsample: int,
-    noise_std: float | None,
-    mirror: bool,
-) -> torch.Tensor:
-    """
-    Single frame augmentation using a provided affine matrix.
-    
-    Parameters
-    ----------
-        frame: [1, H, W] tensor of features
-        theta: [1, 2, 3] affine transformation matrix
-        upsample: upsample factor (int)
-        noise_std: std of Gaussian noise to add (float or None)
-        mirror: random mirroring (bool)
-    
-    Returns
-    -------
-        lo: [1, H, W] tensor of augmented features
-    """
-    # Upsample
-    hi = F.interpolate(frame.unsqueeze(0), scale_factor=upsample,
-                       mode='bilinear', align_corners=False)  # [1, 1, H*upsample, W*upsample]
-    
-    # Random mirror
-    if mirror and random.random() < 0.5:
-        frame = frame.flip(-1)  # Flip along W axis
-
-    # Apply the provided affine matrix
-    grid = F.affine_grid(theta, hi.shape, align_corners=False)
-    hi = F.grid_sample(hi, grid, padding_mode='border', align_corners=False)
-
-    # Downsample back
-    lo = F.interpolate(hi, size=(GRID_H, GRID_W), mode='area')
-
-    # Add noise if noise_std is not None
-    if noise_std is not None:
-        lo += torch.randn_like(lo) * noise_std
-
-    return lo.squeeze(0)
+    return torch.from_numpy(theta).unsqueeze(0), rot_deg, tx, ty
 
 
 def augment_sample(
@@ -103,7 +61,7 @@ def augment_sample(
     angle: float,
     mirror: bool,
     noise_std: float | None,
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Augment a single sample (1, T, C) tensor using a single affine matrix for all frames.
     
@@ -120,19 +78,44 @@ def augment_sample(
     Returns
     -------
         aug_sample: [num_aug, T, C] tensor of augmented features
+        aug_params: [num_aug, 4] tensor of augmentation parameters
     """
     augmented = []
+    aug_params = []
+    T = sample.shape[0]
     for _ in range(num_aug):
         # Generate a single affine matrix for the entire sample
-        theta = rand_affine(angle, shift, upsample).to(sample.device)
+        theta, rot_deg, tx, ty = rand_affine(angle, shift, upsample)
+        theta = theta.to(sample.device)
+        
+        mirrored = mirror and random.random() < 0.5
 
         # Convert sample to [T, 1, H, W] and apply augmentation
         frames = vec2array(sample)  # [T, 1, H, W]
-        augmented_frames = [augment_frame(frame, theta, upsample, noise_std, mirror) for frame in frames]
-        augmented_sample = array2vec(torch.stack(augmented_frames))  # [T, C]
-        augmented.append(augmented_sample)
+        
+        if mirrored:
+            frames = frames.flip(-1)
 
-    return torch.stack(augmented)  # [num_aug, T, C]
+        # Upsample
+        hi = F.interpolate(frames, scale_factor=upsample, mode='bilinear', align_corners=False)
+
+        # Apply affine transformation to all frames
+        theta_batch = theta.repeat(T, 1, 1) # [T, 2, 3]
+        grid = F.affine_grid(theta_batch, hi.shape, align_corners=False)
+        hi = F.grid_sample(hi, grid, padding_mode='border', align_corners=False)
+
+        # Downsample
+        lo = F.interpolate(hi, size=(GRID_H, GRID_W), mode='area')
+
+        # Add noise
+        if noise_std is not None:
+            lo += torch.randn_like(lo) * noise_std
+
+        augmented_sample = array2vec(lo) # [T, C]
+        augmented.append(augmented_sample)
+        aug_params.append([tx, ty, rot_deg, float(mirrored)])
+
+    return torch.stack(augmented), torch.tensor(aug_params, dtype=torch.float32)
 
 def main(args):
     set_seed(args.seed)
@@ -149,8 +132,9 @@ def main(args):
     N, T, C = features.shape
     aug_features = []
     aug_labels = []
+    aug_params_all = []
     for i in tqdm(range(N), desc='Augmenting samples', unit='sample'):
-        batch = augment_sample(
+        batch, batch_params = augment_sample(
             features[i],
             num_aug=args.num_aug,
             upsample=args.upsample,
@@ -161,19 +145,29 @@ def main(args):
         )
         aug_features.append(batch)                          # [num_aug, T, C]        
         aug_labels.append(labels[i].repeat(args.num_aug))   # [num_aug]
+        aug_params_all.append(batch_params)
     
     out_features = torch.stack(aug_features)  # [N, num_aug, T, C]
     out_labels = torch.stack(aug_labels)      # [N, num_aug]
+    out_params = torch.stack(aug_params_all)  # [N, num_aug, 4]
 
     print(f'Augmented features shape: {out_features.shape}')
     print(f'Augmented labels shape: {out_labels.shape}')
+    print(f'Augmented params shape: {out_params.shape}')
     
-    torch.save({'features': out_features, 'labels': out_labels},
-               os.path.join(args.out_dir, f'augmented_dataset_{args.num_aug}.pt'))
     if args.test_type is not None:
-        print(f'Saved augmented dataset to {os.path.join(args.out_dir, f'augmented_dataset_{args.test_type}_{args.num_aug}.pt')}')
+        file_basename = f'augmented_dataset_{args.test_type}_{args.num_aug}'
     else:
-        print(f'Saved augmented dataset to {os.path.join(args.out_dir, f'augmented_dataset_{args.num_aug}.pt')}')
+        file_basename = f'augmented_dataset_{args.num_aug}'
+    
+    save_path = os.path.join(args.out_dir, f'{file_basename}.pt')
+
+    print(f'Saved augmented dataset to {save_path}')
+    torch.save({
+        'features': out_features,
+        'labels': out_labels,
+        'params': out_params
+    }, save_path)
 
     # Visualization of augmented data
     print("Visualizing augmented data...")
