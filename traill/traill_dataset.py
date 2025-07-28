@@ -415,7 +415,9 @@ if __name__ == '__main__':
         if not args.no_save:
             group_str = f'-group_{args.group}' if args.group else ''
             filter_str = '' if args.apply_filter else '-no_filter'
-            out_path = os.path.join('data', '.processed', f'dataset-{args.person}-{csv_path_no_text.split("\\")[-1]}{group_str}{filter_str}.pt')
+            # Extract the base name of the file path before using it in the f-string
+            filename_base = os.path.basename(csv_path_no_text)
+            out_path = os.path.join('data', '.processed', f'dataset-{args.person}-{filename_base}{group_str}{filter_str}.pt')
             os.makedirs(os.path.join('data', '.processed'), exist_ok=True)
             print(f'Saving dataset to {out_path}...')
             torch.save(dataset, out_path)
