@@ -12,7 +12,7 @@
 
     "vr_command_test": {
         "activities": [
-            "zoom_in","zoom_out", "double_tap","pointer_tap",
+            "zoom_in","zoom_out","open","pointer_tap",
             "pointer_tap","fist","swipe_left",
             "fist"
         ],
