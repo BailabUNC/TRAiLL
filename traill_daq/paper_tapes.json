@@ -4,9 +4,9 @@
             "active", "active", "active", "active", "active", "active"
         ],
         "durations": [
-            250, 250, 250, 250, 250, 3000
+            250, 250, 250, 250, 250, 1000
         ],
-        "start_delay": 100,
+        "start_delay": 300,
         "interval": 250
     },
 
