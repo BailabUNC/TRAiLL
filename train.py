@@ -10,12 +10,13 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split, TensorDataset
 from tqdm.auto import tqdm
+from prettytable import PrettyTable
 
 from traill.traill_dataset import TRAiLLDataset
-from model import TRAiLLClassifier
+from model import TRAiLLClassifier2D
 from utils import *
 
-def get_dataloaders(path, batch_size, val_split, generator=None):
+def get_dataloaders(path, batch_size, val_split, generator=None, label_offset=9):
     """
     Load tensors from the concatenated .pt file and return train/val dataloaders.
     """
@@ -30,7 +31,20 @@ def get_dataloaders(path, batch_size, val_split, generator=None):
     print('Reshaped features shape:', features.shape)
     print('Reshaped labels shape:', labels.shape)
 
-    labels -= 9  # label offset
+    print('Original unique labels:', torch.unique(labels))
+    labels -= label_offset  # label offset
+    print('Labels after offset:', torch.unique(labels))
+
+    # Remap labels to be contiguous and 0-indexed
+    unique_labels = torch.unique(labels)
+    label_map = {label.item(): i for i, label in enumerate(unique_labels)}
+    
+    mapped_labels = torch.zeros_like(labels)
+    for original_label, new_label in label_map.items():
+        mapped_labels[labels == original_label] = new_label
+    
+    labels = mapped_labels
+    print('Remapped labels:', torch.unique(labels))
 
     # sanity check dtypes
     features = features.float()
@@ -73,14 +87,26 @@ def train(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
 
-    train_dl, val_dl, dataset = get_dataloaders(args.data_pt, args.batch, args.val_split, generator)
+    train_dl, val_dl, dataset = get_dataloaders(args.data_pt, args.batch, args.val_split, generator, args.label_offset)
 
-    sample_x, _ = dataset[0]
     num_classes = int(torch.unique(torch.stack([y for _, y in dataset])).numel())
 
-    model = TRAiLLClassifier(in_channel=sample_x.shape[-1],
-                             num_classes=num_classes,
-                             dropout=args.dropout).to(device)
+    model = TRAiLLClassifier2D(
+        num_classes=num_classes,
+        grid_shape=(6, 8),
+        dropout=args.dropout
+    ).to(device)
+    
+    table = PrettyTable(["Module", "Parameters"])
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            continue
+        params = parameter.numel()
+        table.add_row([name, params])
+        total_params += params
+    print(table)
+    print(f"Total Trainable Params: {total_params}")
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -156,6 +182,8 @@ if __name__ == '__main__':
                         help='Fraction for validation set')
     parser.add_argument('--tlen',       type=int,   default=128,
                         help='Resampled time-length')
+    parser.add_argument('--label-offset', type=int, default=9,
+                        help='Offset to apply to labels (default: 9)')
     args = parser.parse_args()
 
     train(args)

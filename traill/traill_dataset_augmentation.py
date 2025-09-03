@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from cmap import Colormap
 
 from utils import *
 
@@ -162,40 +163,56 @@ def main(args):
     
     save_path = os.path.join(args.out_dir, f'{file_basename}.pt')
 
-    print(f'Saved augmented dataset to {save_path}')
-    torch.save({
-        'features': out_features,
-        'labels': out_labels,
-        'params': out_params
-    }, save_path)
+    if not args.no_save:
+        os.makedirs(args.out_dir, exist_ok=True)
+        print(f'Saved augmented dataset to {save_path}')
+        torch.save({
+            'features': out_features,
+            'labels': out_labels,
+            'params': out_params
+        }, save_path)
+    else:
+        print('Skipping save (--no-save specified).')
 
-    # Visualization of augmented data
-    print("Visualizing augmented data...")
+    # Visualization of augmented data as heatmaps
+    print('Visualizing augmented data (heatmaps)...')
     num_instances, num_aug, target_length, num_channels = out_features.shape
 
-    # Select a random class (letter) to visualize
-    random_class_idx = random.randint(0, num_instances - 1)
-    print(f"Visualizing augmented samples for class index: {out_labels[random_class_idx][0]}")
-    print(out_labels.shape)
+    # Select a random sample index to visualize
+    sample_idx = random.randint(0, num_instances - 1)
+    sample_label = out_labels[sample_idx][0].item()
+    print(f'Visualizing sample index: {sample_idx} (label={sample_label})')
 
-    fig, axes = plt.subplots(nrows=6, ncols=8, figsize=(16, 12))
-    colors = ['red', 'blue', 'green', 'orange', 'purple']  # Colors for the 5 samples
+    # Determine most significant timestamp (max sum of absolute channel values in original sample)
+    orig_sample = features[sample_idx]  # [T, C]
+    significance = orig_sample.abs().sum(dim=1)  # [T]
+    ts_idx = int(significance.argmax().item())
+    print(f'Most significant timestamp: {ts_idx}')
 
-    for channel, ax in enumerate(axes.flat):
-        # Plot the un-augmented data in black
-        ax.plot(features[random_class_idx, :, channel].numpy(), c='black', alpha=0.8, label='Original')
+    # Prepare frames: original + first 3 augmented (or fewer if num_aug < 3)
+    num_show_aug = min(3, num_aug)
+    frames = []
+    titles = ['Original']
+    frames.append(orig_sample[ts_idx].view(GRID_H, GRID_W))
+    for k in range(num_show_aug):
+        frames.append(out_features[sample_idx, k, ts_idx].view(GRID_H, GRID_W))
+        titles.append(f'Aug {k+1}')
 
+    # Compute shared color scale
+    stacked = torch.stack(frames)
+    vmin = float(stacked.min().item())
+    vmax = float(stacked.max().item())
+    print(f'Color scale: vmin={vmin}, vmax={vmax}')
 
-        for aug_idx in range(min(num_aug, 5)):  # Show up to 5 augmented samples
-            ax.plot(out_features[random_class_idx, aug_idx, :, channel].numpy(), c=colors[aug_idx], alpha=0.5)
+    fig, axes = plt.subplots(1, 1 + num_show_aug, figsize=(3.2 * (1 + num_show_aug), 4))
+    if (1 + num_show_aug) == 1:
+        axes = [axes]
 
-        ax.set_xlim([0, target_length - 1])
-        ax.set_ylim([-3, 3])
+    for ax, frame, title in zip(axes, frames, titles):
+        im = ax.imshow(frame.numpy(), cmap=Colormap('cmocean:balance').to_mpl(), vmin=vmin, vmax=vmax, aspect='equal')
+        ax.set_title(title, fontsize=10)
         ax.set_xticks([])
         ax.set_yticks([])
-        ax.set_title(f"Channel {channel + 1}", fontsize=8)
-
-    plt.suptitle(f"Augmented Samples for Class {out_labels[random_class_idx][0]}", fontsize=16)
     plt.tight_layout()
     plt.show()
 
@@ -210,6 +227,7 @@ if __name__ == '__main__':
     parser.add_argument('--angle', type=float, default=5.0, help='Maximum rotation (degrees).')
     parser.add_argument('--noise-std', type=float, default=0.02, help='Standard deviation of Gaussian noise.')
     parser.add_argument('--no-mirror', action='store_false', dest='mirror', help='Disable random mirroring.')
+    parser.add_argument('--no-save', action='store_true', help='Skip saving augmented dataset; only visualize.')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility.')
 
     args = parser.parse_args()
