@@ -7,7 +7,7 @@ parser.add_argument("path", type=str, help="Path to the .pt file to inspect.")
 args = parser.parse_args()
 
 # Load and inspect the .pt file
-data = torch.load(args.path, map_location='cpu')
+data = torch.load(args.path, weights_only=True, map_location='cpu')
 
 if isinstance(data, dict):
     for key, value in data.items():
