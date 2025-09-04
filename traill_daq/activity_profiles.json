@@ -34,5 +34,9 @@
   "vr_test": {
     "activities": ["zoom_in","zoom_out","pointer_tap","fist","swipe_left"],
     "action_duration": 200
+  },
+  "long_test": {
+    "activities": ["aerobic", "anaerobic"],
+    "action_duration": 60000
   }
 }

@@ -35,7 +35,8 @@ class TRAiLLVisualizer:
                  profile_json_path='activity_profiles.json',
                  paper_tape_name=None,
                  paper_tape_json_path='paper_tapes.json',
-                 start_delay=0):
+                 start_delay=0,
+                 auto_zero_interval=None):  # NEW: seconds between automatic re-zero, None disables
         self.serial_port = serial_port
         self.baud_rate = baud_rate
         self.data_folder = data_folder
@@ -45,6 +46,8 @@ class TRAiLLVisualizer:
         self.saving_queue = Queue()
 
         self.disable_csv = disable_csv
+        # NEW: store interval (None or <=0 disables)
+        self.auto_zero_interval = auto_zero_interval if (auto_zero_interval is not None and auto_zero_interval > 0) else None
         
         self.filepath = None
         self.fig, self.ax = None, None
@@ -173,6 +176,8 @@ class TRAiLLVisualizer:
         This is the child process.
         '''
         baseline = None  # store the first data sample per channel
+        last_zero_time = time.time()
+        zero_count = 0
         try:
             self.connect()
             line_buffer = []
@@ -189,13 +194,20 @@ class TRAiLLVisualizer:
                     continue  # skip empty line
 
                 line_buffer.append(line)
-                # logging.info(line)
                 if len(line_buffer) == 6:
                     data = self.parse(line_buffer)
                     if data.shape == (6, 8):
                         data = np.roll(data, -1)  # fix the data order problem
                         if baseline is None:
                             baseline = data.copy()
+                            last_zero_time = time.time()
+                            logging.info('Initial baseline captured.')
+                        # Periodic auto-zero
+                        elif self.auto_zero_interval is not None and (time.time() - last_zero_time) >= self.auto_zero_interval:
+                            baseline = data.copy()
+                            last_zero_time = time.time()
+                            zero_count += 1
+                            logging.info(f'Auto-zero #{zero_count}: baseline refreshed.')
                         data = data - baseline
                         self.vis_queue.put(data)
                         if not self.disable_csv:
