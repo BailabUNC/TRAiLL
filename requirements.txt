@@ -9,3 +9,4 @@ torch==2.6.0+cu126
 tqdm
 prettytable
 tensorboard
+scamp
