@@ -12,7 +12,6 @@
 - **Flexible Activity Profiles**: Easily switch between gesture/activity sets using JSON-based profiles.
 - **Live Visualization**: Real-time heatmap and activity status panel for intuitive feedback.
 - **Data Processing Utilities**: Filtering, augmentation, and concatenation scripts for robust dataset creation.
-- **Model Training & Evaluation**: PyTorch-based scripts for training and evaluating gesture recognition models.
 - **Extensible & Modular**: Easily adapt to new sensor layouts, activities, or machine learning models.
 
 ---
@@ -69,19 +68,17 @@ Define your activity sets in traill_daq/activity_profiles.json:
   - run.py: Main entry point for data collection and visualization.
   - traill_visualizer.py: Visualization logic and GUI.
   - activity_profiles.json: Activity/gesture profile definitions.
-  - traill/: Data processing and machine learning.
+  - traill/: Data processing and analysis.
 
 - traill_dataset.py: Dataset utilities.
 
   - traill_dataset_concat.py: Concatenate multiple datasets.
   - traill_dataset_augmentation.py: Data augmentation scripts.
-  - model.py: Model definitions.
-  - train.py: Training script.
-  - predict.py: Model evaluation and prediction.
+  - channel_reduction.py: LDA-based channel reduction and visualization.
 
 - data/: Raw and processed data files.
 
-- result/: Analysis and visualization scripts (e.g., generate_heatmap.py).
+- result/: Analysis and visualization scripts.
 
 ---
 ## Example Usage
@@ -95,29 +92,22 @@ Concatenate datasets:
 Augment datasets:
 `python [traill_dataset_augmentation.py](http://_vscodecontentref_/2) --input data/processed/your_dataset.pt --output data/processed/augmented.pt`
 
-Model training:
-`python [train.py](http://_vscodecontentref_/3) data/processed/your_dataset.pt --epochs 20 --batch 32 --lr 2e-3 --dropout 0.2`
-
-Model evaluation:
-`python [predict.py](http://_vscodecontentref_/4) data/processed/your_dataset.pt best_model.pth --batch-size 32 --num-classes 26`
-
-Heatmap visualization:
-`python [generate_heatmap.py](http://_vscodecontentref_/5)`
 
 ---
 ## Folder Structure
 ```
 TRAiLL/
 │
-├── traill/                # Data processing and model code
+├── traill/                # Data processing and analysis
 ├── traill_daq/            # Data acquisition and visualization
 │   ├── activity_profiles.json
 │   ├── run.py
 │   └── traill_visualizer.py
 ├── data/                  # Raw and processed data
 ├── result/                # Analysis and visualization scripts
-├── [requirements.txt](http://_vscodecontentref_/6)
-└── [README.md](http://_vscodecontentref_/7)
+├── utils.py
+├── requirements.txt
+└── README.md
 ```
 
 ---

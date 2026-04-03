@@ -5,9 +5,19 @@ __pycache__/
 
 raw_data/*.csv
 data/.augmented/
+data/.processed/
 
 *_MACOSX*
 *.DS_Store
+
+# Model checkpoints and weights
+checkpoints/
+*.pth
+*.ckpt
+
+# TensorBoard logs
+runs/
+tb_logs/
 
 # Figures and videos projects
 figures/
@@ -18,7 +28,7 @@ figures/
 # Jupyter Notebook
 *.ipynb
 
-# Plyground
+# Playground
 playground/*.py
 
 # Paperwork
