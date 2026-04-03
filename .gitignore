@@ -20,3 +20,7 @@ figures/
 
 # Plyground
 playground/*.py
+
+# Paperwork
+paperwork/
+ai-doc/
