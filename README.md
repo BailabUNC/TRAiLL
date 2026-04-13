@@ -1,120 +1,74 @@
-# TRAiLL: Tracking & Reconstructing Array of near-infrared LED for body Locomotion
+# TRAiLL Training Workspace
 
-## Overview
+This workspace is focused on the three-stage SOMA training pipeline only:
 
-**TRAiLL** is a comprehensive Python toolkit for collecting, processing, visualizing, and modeling sensor data from wearable near-infrared LED arrays. It is designed for research and prototyping in gesture recognition, prosthetics, rehabilitation, and human-computer interaction.
+- Phase I: denoising autoencoder
+- Phase II: SimSiam representation refinement
+- Phase III: downstream end-task classifier
 
----
+Runtime folders such as `eval/` and `experiments/` are intentionally excluded from this setup.
 
-## Features
+## Core Scripts
 
-- **Real-Time Data Acquisition**: Collects data from wearable NIR sensor arrays via serial communication.
-- **Flexible Activity Profiles**: Easily switch between gesture/activity sets using JSON-based profiles.
-- **Live Visualization**: Real-time heatmap and activity status panel for intuitive feedback.
-- **Data Processing Utilities**: Filtering, augmentation, and concatenation scripts for robust dataset creation.
-- **Extensible & Modular**: Easily adapt to new sensor layouts, activities, or machine learning models.
+- `path_config.py` - centralized path defaults and fallback resolution
+- `train_phase1_autoencoder.py` - Phase I training
+- `train_phase2_simsiam.py` - Phase II training
+- `train_phase3_end_task.py` - Phase III training
+- `tools/phase3_end_task_lib.py` - shared utilities for Phase III
 
----
+## Required Directory Layout
 
-## Quick Start
-
-### 1. Clone the Repository
-
-```
-bash
-git clone https://github.com/yourusername/TRAiLL.git
-cd TRAiLL
-```
-
-### 2. Set Up the Environment
-Create and activate a virtual environment:
-
-```
-python -m venv .venv
-# On Windows:
-.venv\Scripts\activate
-# On macOS/Linux:
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```
-pip install -r [requirements.txt](http://_vscodecontentref_/0)
-```
-
-### 3. Data Acquisition & Visualization
-Connect your device and run:
-```
-python -m traill_daq.run --port <YOUR_SERIAL_PORT> --profile letters
-```
-
-- `--port`: Serial port for your device (e.g., COM31).
-- `--profile`: Name of the activity profile (see traill_daq/activity_profiles.json).
-
-### 4. Activity Profiles
-Define your activity sets in traill_daq/activity_profiles.json:
-```
-{
-  "letters": { "activities": ["open", "a", "b", "c", ..., "z"] },
-  "fingers": { "activities": ["open", "thumb", "index", "middle", "ring", "pinky"] }
-}
-```
-
----
-## Main Components
-- traill_daq/: Data acquisition and real-time visualization.
-
-  - run.py: Main entry point for data collection and visualization.
-  - traill_visualizer.py: Visualization logic and GUI.
-  - activity_profiles.json: Activity/gesture profile definitions.
-  - traill/: Data processing and analysis.
-
-- traill_dataset.py: Dataset utilities.
-
-  - traill_dataset_concat.py: Concatenate multiple datasets.
-  - traill_dataset_augmentation.py: Data augmentation scripts.
-  - channel_reduction.py: LDA-based channel reduction and visualization.
-
-- data/: Raw and processed data files.
-
-- result/: Analysis and visualization scripts.
-
----
-## Example Usage
-Data Collection
-`python -m traill_daq.run --port <YOUR_SERIAL_PORT> --profile letters`
-
-Data Processing
-Concatenate datasets:
-`python [traill_dataset_concat.py](http://_vscodecontentref_/1) person letters --data-dir data/processed`
-
-Augment datasets:
-`python [traill_dataset_augmentation.py](http://_vscodecontentref_/2) --input data/processed/your_dataset.pt --output data/processed/augmented.pt`
-
-
----
-## Folder Structure
-```
+```text
 TRAiLL/
-│
-├── traill/                # Data processing and analysis
-├── traill_daq/            # Data acquisition and visualization
-│   ├── activity_profiles.json
-│   ├── run.py
-│   └── traill_visualizer.py
-├── data/                  # Raw and processed data
-├── result/                # Analysis and visualization scripts
-├── utils.py
-├── requirements.txt
-└── README.md
+├── data/
+│   ├── .augmented/
+│   └── baseline_arrays/
+├── checkpoints/
+│   ├── phase1/
+│   ├── phase2/simsiam/
+│   ├── phase3/
+│   └── analysis/
+├── outputs/
+│   ├── phase1/{arrays,plots}/
+│   ├── phase2/{arrays,plots}/
+│   ├── phase3/{arrays,plots}/
+│   ├── paper/
+│   └── legacy/
+├── archive/
+│   └── checkpoints/
+├── tools/
+│   ├── __init__.py
+│   └── phase3_end_task_lib.py
+├── path_config.py
+├── train_phase1_autoencoder.py
+├── train_phase2_simsiam.py
+└── train_phase3_end_task.py
 ```
 
----
-## License
-MIT License
+## Default Data Dependencies
 
----
-## Acknowledgements
-TRAiLL was developed at the University of North Carolina at Chapel Hill.
-Special thanks to all contributors and the open-source community.
+- Phase I default input:
+  - `data/.augmented/augmented_dataset_letters_group_1_10_std0.15.pt`
+- Phase II default input:
+  - `data/.augmented/augmented_dataset_letters_group_1_50_no_translation.pt`
+- Phase III default inputs:
+  - `data/baseline_arrays/filter_features1.npy`
+  - `data/baseline_arrays/filter_labels1.npy`
+
+## Checkpoint Dependencies
+
+- Phase II requires a Phase I checkpoint:
+  - `checkpoints/phase1/augmented_phase_1.pth`
+- Phase III requires an encoder checkpoint pack (typically containing `"enc"`):
+  - `checkpoints/phase3/model_best.pth`
+
+## Smoke Checks
+
+Run from repository root:
+
+```bash
+python train_phase1_autoencoder.py --dry-run
+python train_phase2_simsiam.py --help
+python train_phase3_end_task.py --dry-run
+python -m py_compile path_config.py train_phase1_autoencoder.py train_phase2_simsiam.py train_phase3_end_task.py tools/phase3_end_task_lib.py
+```
