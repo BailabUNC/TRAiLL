@@ -1,0 +1,10 @@
+{
+  "phase2": {
+    "best_val_loss": -0.845365047454834
+  },
+  "outer_test_subject_ids": [
+    2
+  ],
+  "inner_train_samples": 317,
+  "inner_val_samples": 80
+}

@@ -1,0 +1,67 @@
+{
+  "phase": "phase3_trunk",
+  "device": "cpu",
+  "smoke": true,
+  "folds": {
+    "fold1": {
+      "phase3_trunk": {
+        "val_best_acc": 0.012345679012345678,
+        "window_acc": 0.04145077720207254,
+        "window_macro_f1": 0.008333333333333333,
+        "window_bal_acc": 0.041087962962962965,
+        "instance_acc": 0.04145077720207254,
+        "instance_macro_f1": 0.008333333333333333,
+        "instance_bal_acc": 0.041087962962962965
+      },
+      "encoder_ckpt": "checkpoints\\phase2\\simsiam\\loso_fold1_encoder.pth",
+      "outer_test_subject_ids": [
+        1
+      ],
+      "inner_train_samples": 321,
+      "inner_val_samples": 81,
+      "outer_test_samples": 193
+    },
+    "fold2": {
+      "phase3_trunk": {
+        "val_best_acc": 0.0625,
+        "window_acc": 0.03535353535353535,
+        "window_macro_f1": 0.003119429590017825,
+        "window_bal_acc": 0.041666666666666664,
+        "instance_acc": 0.03535353535353535,
+        "instance_macro_f1": 0.003119429590017825,
+        "instance_bal_acc": 0.041666666666666664
+      },
+      "encoder_ckpt": "checkpoints\\phase2\\simsiam\\loso_fold2_encoder.pth",
+      "outer_test_subject_ids": [
+        2
+      ],
+      "inner_train_samples": 317,
+      "inner_val_samples": 80,
+      "outer_test_samples": 198
+    },
+    "fold3": {
+      "phase3_trunk": {
+        "val_best_acc": 0.05063291139240506,
+        "window_acc": 0.04411764705882353,
+        "window_macro_f1": 0.008448060075093867,
+        "window_bal_acc": 0.046875,
+        "instance_acc": 0.04411764705882353,
+        "instance_macro_f1": 0.008448060075093867,
+        "instance_bal_acc": 0.046875
+      },
+      "encoder_ckpt": "checkpoints\\phase2\\simsiam\\loso_fold3_encoder.pth",
+      "outer_test_subject_ids": [
+        3
+      ],
+      "inner_train_samples": 312,
+      "inner_val_samples": 79,
+      "outer_test_samples": 204
+    }
+  },
+  "aggregate": {
+    "window_acc_mean": 0.04030731987147714,
+    "window_acc_std": 0.0036681543493389686,
+    "instance_acc_mean": 0.04030731987147714,
+    "instance_acc_std": 0.0036681543493389686
+  }
+}

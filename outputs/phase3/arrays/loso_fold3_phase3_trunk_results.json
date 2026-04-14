@@ -1,0 +1,18 @@
+{
+  "phase3_trunk": {
+    "val_best_acc": 0.05063291139240506,
+    "window_acc": 0.04411764705882353,
+    "window_macro_f1": 0.008448060075093867,
+    "window_bal_acc": 0.046875,
+    "instance_acc": 0.04411764705882353,
+    "instance_macro_f1": 0.008448060075093867,
+    "instance_bal_acc": 0.046875
+  },
+  "encoder_ckpt": "checkpoints\\phase2\\simsiam\\loso_fold3_encoder.pth",
+  "outer_test_subject_ids": [
+    3
+  ],
+  "inner_train_samples": 312,
+  "inner_val_samples": 79,
+  "outer_test_samples": 204
+}
