@@ -1,20 +1,18 @@
-# LOSO Prepared Datasets
+# LOSO Prepared Datasets (mixed pseudo-sessions)
 
-This folder stores fold-ready datasets for outer-subject LOSO and inner train/val splits.
+Group `concatenated_dataset-daniela-letters-group_*.pt` files were **shuffled and split**
+into three pseudo-sessions (`mixed_session1.pt` … `mixed_session3.pt`).
+LOSO then treats `S1`/`S2`/`S3` as those sessions (not raw recording groups).
+
+Provenance: `origin_group_ids` in each `.pt` is `1/2/3` for original daniela group.
 
 ## File format
 
-Each `.pt` file is a dictionary with:
+Each fold `.pt` dictionary includes:
 
-- `features`: `FloatTensor [N, T, C]`
-- `labels`: `LongTensor [N]`
-- `subject_ids`: `LongTensor [N]` (`1`=S1, `2`=S2, `3`=S3)
-
-## Subject mapping
-
-- `S1` -> `daniela_group_1`
-- `S2` -> `daniela_group_2`
-- `S3` -> `daniela_group_3`
+- `features`, `labels`, `subject_ids`
+- `instance_ids` (optional): offset so IDs are unique across concatenated sessions
+- `origin_group_ids` (optional): original daniela group index per window
 
 ## Folds
 
@@ -22,6 +20,6 @@ Each `.pt` file is a dictionary with:
 - `fold2`: train on `S1+S3`, test on `S2`
 - `fold3`: train on `S1+S2`, test on `S3`
 
-Inner split is stratified 80/20 over outer-train labels.
+Inner split: stratified 80/20 over outer-train **labels**.
 
-See `loso_manifest.json` for per-file sample counts and label distributions.
+See `loso_manifest.json` and `mixed_sessions_manifest.json`.
