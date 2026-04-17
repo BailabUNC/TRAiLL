@@ -10,13 +10,21 @@ data/.processed/
 *_MACOSX*
 *.DS_Store
 
+# Experiment outputs (plots, metrics JSON, etc.)
+outputs/
+
 # Model checkpoints and weights
 checkpoints/
 *.pth
 *.ckpt
 
-# processed data
+# PyTorch tensors anywhere under data/ (note: `data/*.pt` alone does NOT match `data/loso/*.pt`)
 data/*.pt
+data/**/*.pt
+
+# LOSO split manifests (embed machine-local absolute paths)
+data/loso/loso_manifest.json
+data/loso/mixed_sessions_manifest.json
 
 # TensorBoard logs
 runs/
