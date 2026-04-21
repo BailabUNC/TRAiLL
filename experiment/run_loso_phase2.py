@@ -21,6 +21,12 @@ def main() -> None:
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=2e-3)
+    parser.add_argument(
+        "--run-tag",
+        type=str,
+        default="",
+        help="Optional subfolder under outputs/phase2/runs/<tag>/arrays to avoid overwriting default outputs.",
+    )
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
 
@@ -30,7 +36,11 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loso_dir = ROOT / args.loso_dir
-    out_dir = ROOT / "outputs" / "phase2" / "arrays"
+    out_dir = (
+        ROOT / "outputs" / "phase2" / "runs" / args.run_tag / "arrays"
+        if args.run_tag
+        else ROOT / "outputs" / "phase2" / "arrays"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {"phase": "phase2", "device": str(device), "smoke": bool(args.smoke), "folds": {}}

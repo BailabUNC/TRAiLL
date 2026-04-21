@@ -88,6 +88,12 @@ def main() -> None:
         help="Exponent for inverse-frequency class weights (1.0 = exact inverse frequency).",
     )
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument(
+        "--run-tag",
+        type=str,
+        default="",
+        help="Optional subfolder under outputs/phase3/runs/<tag>/arrays to avoid overwriting default outputs.",
+    )
     args = parser.parse_args()
 
     if args.conservative:
@@ -117,7 +123,11 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loso_dir = ROOT / args.loso_dir
-    out_dir = ROOT / "outputs" / "phase3" / "arrays"
+    out_dir = (
+        ROOT / "outputs" / "phase3" / "runs" / args.run_tag / "arrays"
+        if args.run_tag
+        else ROOT / "outputs" / "phase3" / "arrays"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     max_grad_norm = args.max_grad_norm if args.max_grad_norm > 0 else None

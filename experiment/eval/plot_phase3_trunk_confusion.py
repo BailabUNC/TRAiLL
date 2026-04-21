@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Plot confusion matrices from ``loso_*_phase3_trunk_results.json`` (val + test diagnostics)."""
+"""Plot confusion matrices from ``loso_*_phase3_trunk_results.json``.
+
+Output filenames are split-explicit:
+- ``*_confusion_matrix_outer_test_held_out.png`` for LOSO held-out subject (outer test)
+- ``*_confusion_matrix_inner_val_held_in.png`` for held-in-subject validation (inner val)
+"""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +22,11 @@ import matplotlib.pyplot as plt
 
 
 Split = Literal["test", "val"]
+
+SPLIT_FILENAME_SUFFIX: dict[Split, str] = {
+    "test": "outer_test_held_out",
+    "val": "inner_val_held_in",
+}
 
 
 def _load_confusion_matrix(payload: dict[str, Any], split: Split) -> np.ndarray:
@@ -112,7 +122,10 @@ def main() -> None:
         "--out-dir",
         type=str,
         default="outputs/phase3/plots",
-        help="Directory for PNG files (created if missing).",
+        help=(
+            "Directory for PNG files (created if missing). "
+            "Filenames include split semantics: outer_test_held_out / inner_val_held_in."
+        ),
     )
     parser.add_argument("--dpi", type=int, default=150)
     parser.add_argument(
@@ -159,8 +172,8 @@ def main() -> None:
                     print(f"  skip {tag} val: {err}")
                     continue
                 raise
-            suffix = "" if sp == "test" else "_val"
-            out_path = out_dir / f"{tag}_confusion_matrix{suffix}.png"
+            split_suffix = SPLIT_FILENAME_SUFFIX[sp]
+            out_path = out_dir / f"{tag}_confusion_matrix_{split_suffix}.png"
             title = f"{tag} — {sp} confusion ({cm.shape[0]}×{cm.shape[1]})\n{path.name}"
             plot_confusion_matrix(cm, title=title, out_path=out_path, dpi=args.dpi)
             print(f"Wrote {out_path}")
