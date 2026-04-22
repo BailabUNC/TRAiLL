@@ -4,7 +4,7 @@
 Loads encoder weights from ``PHASE3_ENCODER_BEST`` (expects a dict with an ``\"enc\"`` state_dict).
 Trains on ``data/baseline_arrays/filter_features1.npy`` + ``filter_labels1.npy`` by default (same as
 ``eval/phase3/confusion_and_roc.py``). Saves the best-val fold bundle under ``checkpoints/phase3/`` and
-per-fold accuracies under ``outputs/phase3/arrays/``. Run from repo root.
+per-fold accuracies under ``outputs/loso/phase3/results/``. Run from repo root.
 """
 from __future__ import annotations
 

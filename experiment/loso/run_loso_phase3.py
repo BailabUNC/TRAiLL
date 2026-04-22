@@ -9,10 +9,10 @@ import torch
 
 import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from path_config import ROOT
-from experiment.loso_phase_utils import load_split, leakage_check, train_phase3_and_eval
+from experiment.loso.loso_phase_utils import load_split, leakage_check, train_phase3_and_eval
 
 
 def main() -> None:
@@ -31,7 +31,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loso_dir = ROOT / args.loso_dir
-    out_dir = ROOT / "outputs" / "phase3" / "arrays"
+    out_dir = ROOT / "outputs" / "loso" / "phase3" / "results"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {"phase": "phase3", "device": str(device), "smoke": bool(args.smoke), "folds": {}}

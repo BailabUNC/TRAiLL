@@ -48,15 +48,16 @@ OUTPUTS_DIR = ROOT / "outputs"
 # Publication-style exports and legacy panels (merged from former ``figures/paper`` and ``figures/legacy``).
 OUTPUTS_PAPER = OUTPUTS_DIR / "paper"
 OUTPUTS_LEGACY = OUTPUTS_DIR / "legacy"
-OUTPUTS_PHASE1 = OUTPUTS_DIR / "phase1"
-OUTPUTS_PHASE2 = OUTPUTS_DIR / "phase2"
-OUTPUTS_PHASE3 = OUTPUTS_DIR / "phase3"
+OUTPUTS_LOSO = OUTPUTS_DIR / "loso"
+OUTPUTS_PHASE1 = OUTPUTS_LOSO / "phase1"
+OUTPUTS_PHASE2 = OUTPUTS_LOSO / "phase2"
+OUTPUTS_PHASE3 = OUTPUTS_LOSO / "phase3"
 OUTPUTS_PHASE1_PLOTS = OUTPUTS_PHASE1 / "plots"
-OUTPUTS_PHASE1_ARRAYS = OUTPUTS_PHASE1 / "arrays"
+OUTPUTS_PHASE1_ARRAYS = OUTPUTS_PHASE1 / "results"
 OUTPUTS_PHASE2_PLOTS = OUTPUTS_PHASE2 / "plots"
-OUTPUTS_PHASE2_ARRAYS = OUTPUTS_PHASE2 / "arrays"
+OUTPUTS_PHASE2_ARRAYS = OUTPUTS_PHASE2 / "results"
 OUTPUTS_PHASE3_PLOTS = OUTPUTS_PHASE3 / "plots"
-OUTPUTS_PHASE3_ARRAYS = OUTPUTS_PHASE3 / "arrays"
+OUTPUTS_PHASE3_ARRAYS = OUTPUTS_PHASE3 / "results"
 
 # --- Model checkpoints (.pth / weights .pt). Feature tensors (.pt) live under data/ ---
 PHASE1_AUTOENCODER_CKPT = (
@@ -78,7 +79,8 @@ PHASE3_ENCODER_BEST = (
 )
 CHANNEL_SCORES_CKPT = (
     "checkpoints/analysis/channel_scores.pt",
-    "outputs/phase2/arrays/channel_scores.pt",
+    "outputs/loso/phase2/results/channel_scores.pt",
+    "outputs/loso/phase2/arrays/channel_scores.pt",
     "outputs/channel_scores.pt",
     "channel_scores.pt",
 )

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from train_phase1_autoencoder import CNNAutoencoderStrided512
 from train_phase2_simsiam import (

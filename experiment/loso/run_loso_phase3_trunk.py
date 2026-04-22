@@ -9,11 +9,11 @@ import torch
 
 import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from path_config import ROOT
-from experiment.loso_phase3_trunk import train_phase3_trunk_and_eval
-from experiment.loso_phase_utils import load_split, leakage_check
+from experiment.loso.loso_phase3_trunk import train_phase3_trunk_and_eval
+from experiment.loso.loso_phase_utils import load_split, leakage_check
 
 
 def main() -> None:
@@ -92,7 +92,7 @@ def main() -> None:
         "--run-tag",
         type=str,
         default="",
-        help="Optional subfolder under outputs/phase3/runs/<tag>/arrays to avoid overwriting default outputs.",
+        help="Optional subfolder under outputs/loso/phase3/runs/<tag>/results to avoid overwriting default outputs.",
     )
     args = parser.parse_args()
 
@@ -124,9 +124,9 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loso_dir = ROOT / args.loso_dir
     out_dir = (
-        ROOT / "outputs" / "phase3" / "runs" / args.run_tag / "arrays"
+        ROOT / "outputs" / "loso" / "phase3" / "runs" / args.run_tag / "results"
         if args.run_tag
-        else ROOT / "outputs" / "phase3" / "arrays"
+        else ROOT / "outputs" / "loso" / "phase3" / "results"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -169,7 +169,7 @@ def main() -> None:
         if not enc_ckpt.exists():
             raise FileNotFoundError(
                 f"Missing Phase-II encoder for {fold}: {enc_ckpt}\n"
-                "Re-run: python experiment/run_loso_phase2.py (writes loso_*_encoder.pth)."
+                "Re-run: python experiment/loso/run_loso_phase2.py (writes loso_*_encoder.pth)."
             )
 
         out_ckpt = ROOT / "checkpoints" / "phase3" / f"loso_{fold}_trunk_end_task.pth"

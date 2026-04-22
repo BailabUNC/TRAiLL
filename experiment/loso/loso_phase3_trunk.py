@@ -21,12 +21,12 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from train_phase2_simsiam import CNNAutoencoderStrided512 as Phase2AE, Phase1Encoder
 
-from experiment.loso_phase_utils import remap_labels, to_channels_first
-from experiment.phase3_loso_diagnostics import build_split_diagnostics, build_test_diagnostics
+from experiment.loso.loso_phase_utils import remap_labels, to_channels_first
+from experiment.loso.phase3_loso_diagnostics import build_split_diagnostics, build_test_diagnostics
 
 _TRUNK_LATENT = 64
 

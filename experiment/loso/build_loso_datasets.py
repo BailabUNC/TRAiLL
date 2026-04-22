@@ -12,7 +12,7 @@ import torch
 
 from sklearn.model_selection import StratifiedShuffleSplit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from path_config import ROOT
 from traill_data_preparation.traill_loso_session_resplit import mix_and_split_sessions
 

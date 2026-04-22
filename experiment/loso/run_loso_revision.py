@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from path_config import ROOT
 from train_phase1_autoencoder import CNNAutoencoderStrided512
@@ -403,7 +403,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loso_dir = ROOT / args.loso_dir
-    out_metrics_dir = ROOT / "outputs" / "phase3" / "arrays"
+    out_metrics_dir = ROOT / "outputs" / "loso" / "phase3" / "results"
     out_metrics_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {"folds": {}, "device": str(device), "smoke": bool(args.smoke)}

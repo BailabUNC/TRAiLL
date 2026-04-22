@@ -34,7 +34,7 @@ def _load_confusion_matrix(payload: dict[str, Any], split: Split) -> np.ndarray:
     try:
         cm = payload["phase3_trunk"][sub]["confusion_matrix"]
     except KeyError as e:
-        hint = "Run: python experiment/run_loso_phase3_trunk.py (val_diagnostics added in recent runs)."
+        hint = "Run: python experiment/loso/run_loso_phase3_trunk.py (val_diagnostics added in recent runs)."
         raise KeyError(
             f"Expected keys phase3_trunk -> {sub} -> confusion_matrix. {hint}"
         ) from e
@@ -100,7 +100,7 @@ def plot_confusion_matrix(
 
 
 def default_result_paths(repo_root: Path) -> List[Path]:
-    base = repo_root / "outputs" / "phase3" / "arrays"
+    base = repo_root / "outputs" / "loso" / "phase3" / "results"
     if not base.is_dir():
         return []
     paths = sorted(base.glob("loso_fold*_phase3_trunk_results.json"))
@@ -116,12 +116,12 @@ def main() -> None:
         nargs="*",
         type=str,
         default=[],
-        help="Paths to loso_*_phase3_trunk_results.json (default: all under outputs/phase3/arrays/).",
+        help="Paths to loso_*_phase3_trunk_results.json (default: all under outputs/loso/phase3/results/).",
     )
     parser.add_argument(
         "--out-dir",
         type=str,
-        default="outputs/phase3/plots",
+        default="outputs/loso/phase3/plots",
         help=(
             "Directory for PNG files (created if missing). "
             "Filenames include split semantics: outer_test_held_out / inner_val_held_in."
@@ -143,7 +143,7 @@ def main() -> None:
         paths = default_result_paths(repo_root)
         if not paths:
             raise SystemExit(
-                f"No default JSON files found under {repo_root / 'outputs' / 'phase3' / 'arrays'}. "
+                f"No default JSON files found under {repo_root / 'outputs' / 'loso' / 'phase3' / 'results'}. "
                 "Pass explicit paths: python experiment/eval/plot_phase3_trunk_confusion.py path/to/loso_fold1_....json"
             )
 
