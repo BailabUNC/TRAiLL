@@ -124,7 +124,9 @@ def main() -> None:
     fig.tight_layout()
 
     png = out_dir / "loso_per_subject_accuracy.png"
+    svg = out_dir / "loso_per_subject_accuracy.svg"
     fig.savefig(png, dpi=args.dpi)
+    fig.savefig(svg)
     plt.close(fig)
 
     payload = {
@@ -141,6 +143,7 @@ def main() -> None:
         },
         "title": "Subject-wise held-out performance under 3-fold LOSO",
         "figure": str(png.relative_to(ROOT)),
+        "figure_svg": str(svg.relative_to(ROOT)),
     }
     out_json = out_dir / "loso_per_subject_summary.json"
     with out_json.open("w", encoding="utf-8") as f:
